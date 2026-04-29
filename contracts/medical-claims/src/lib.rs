@@ -4,7 +4,8 @@
 mod test;
 mod types;
 
-use soroban_sdk::{contract, contractimpl, Address, BytesN, Env, String, Vec};
+use shared::privacy::{validate_policy_metadata, PolicyMetadata};
+use soroban_sdk::{contract, contractimpl, Address, BytesN, Env, Vec};
 use types::{
     ClaimRecord, ClaimStatus, DataKey, DenialInfo, Error, InsurerPaymentRecord,
     PatientPaymentRecord, ReconciliationStatus, ServiceLine,
@@ -63,12 +64,14 @@ impl MedicalClaimsSystem {
         policy_id: u64,
         service_date: u64,
         service_codes: Vec<ServiceLine>,
-        diagnosis_codes: Vec<String>,
+        diagnosis_hashes: Vec<BytesN<32>>,
         claim_details_hash: BytesN<32>,
+        policy: PolicyMetadata,
         total_amount: i128,
     ) -> Result<u64, Error> {
         provider_id.require_auth();
         Self::require_insurer(&env, &insurer_id)?;
+        validate_policy_metadata(&policy).map_err(|_| Error::InvalidPolicyMetadata)?;
 
         let count: u64 = env
             .storage()
@@ -88,8 +91,9 @@ impl MedicalClaimsSystem {
             policy_id,
             service_date,
             service_codes,
-            diagnosis_codes,
+            diagnosis_hashes,
             details_hash: claim_details_hash,
+            policy,
             total_amount,
             status: ClaimStatus::Submitted,
             approved_amount: None,
@@ -179,12 +183,14 @@ impl MedicalClaimsSystem {
         env.storage()
             .persistent()
             .set(&DataKey::DenialInfos(claim_id), &denied_lines);
-        env.storage()
-            .persistent()
-            .set(&DataKey::ClaimPayment(claim_id), &Vec::<InsurerPaymentRecord>::new(&env));
-        env.storage()
-            .persistent()
-            .set(&DataKey::PatientPayment(claim_id), &Vec::<PatientPaymentRecord>::new(&env));
+        env.storage().persistent().set(
+            &DataKey::ClaimPayment(claim_id),
+            &Vec::<InsurerPaymentRecord>::new(&env),
+        );
+        env.storage().persistent().set(
+            &DataKey::PatientPayment(claim_id),
+            &Vec::<PatientPaymentRecord>::new(&env),
+        );
 
         Ok(())
     }
@@ -225,13 +231,13 @@ impl MedicalClaimsSystem {
         insurer_id: Address,
         payment_amount: i128,
         payment_date: u64,
-        payment_reference: String,
+        payment_reference_hash: BytesN<32>,
     ) -> Result<(), Error> {
         insurer_id.require_auth();
         Self::require_insurer(&env, &insurer_id)?;
         let mut claim = Self::load_claim(&env, claim_id)?;
 
-        if payment_amount <= 0 || payment_reference.is_empty() {
+        if payment_amount <= 0 {
             return Err(Error::InvalidAmount);
         }
 
@@ -267,7 +273,7 @@ impl MedicalClaimsSystem {
         payments.push_back(InsurerPaymentRecord {
             payment_date,
             payment_amount,
-            payment_reference,
+            payment_reference_hash,
         });
 
         env.storage()
@@ -301,10 +307,6 @@ impl MedicalClaimsSystem {
         if claim.status != ClaimStatus::Paid && claim.status != ClaimStatus::Adjudicated {
             return Err(Error::InvalidStateTransition);
         }
-
-        let current_resp = claim.patient_responsibility.unwrap_or(0);
-        let new_resp = current_resp - payment_amount;
-        claim.patient_responsibility = Some(if new_resp < 0 { 0 } else { new_resp });
 
         claim.patient_paid_amount = Self::checked_add(claim.patient_paid_amount, payment_amount)?;
         let (insurer_due, patient_due) = Self::refresh_reconciliation_status(&mut claim)?;
@@ -359,7 +361,10 @@ impl MedicalClaimsSystem {
             .ok_or(Error::ClaimNotFound)
     }
 
-    fn validate_claim_amounts(service_codes: &Vec<ServiceLine>, total_amount: i128) -> Result<(), Error> {
+    fn validate_claim_amounts(
+        service_codes: &Vec<ServiceLine>,
+        total_amount: i128,
+    ) -> Result<(), Error> {
         if total_amount < 0 || service_codes.is_empty() {
             return Err(Error::InvalidAmount);
         }
@@ -394,9 +399,7 @@ impl MedicalClaimsSystem {
         Ok(())
     }
 
-    fn refresh_reconciliation_status(
-        claim: &mut ClaimRecord,
-    ) -> Result<(i128, i128), Error> {
+    fn refresh_reconciliation_status(claim: &mut ClaimRecord) -> Result<(i128, i128), Error> {
         let approved_amount = claim.approved_amount.unwrap_or(0);
         let patient_responsibility = claim.patient_responsibility.unwrap_or(0);
 

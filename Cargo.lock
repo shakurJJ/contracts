@@ -1112,6 +1112,7 @@ dependencies = [
 name = "medical-claims"
 version = "0.0.0"
 dependencies = [
+ "shared",
  "soroban-sdk",
 ]
 

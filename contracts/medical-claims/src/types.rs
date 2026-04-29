@@ -1,3 +1,4 @@
+use shared::privacy::PolicyMetadata;
 use soroban_sdk::{contracterror, contracttype, Address, BytesN, String, Vec};
 
 #[contracterror]
@@ -13,6 +14,7 @@ pub enum Error {
     InsurerNotRegistered = 7,
     InvalidAmount = 8,
     AmountOverflow = 9,
+    InvalidPolicyMetadata = 10,
 }
 
 #[contracttype]
@@ -48,7 +50,7 @@ pub struct ServiceLine {
 pub struct DenialInfo {
     pub line_number: u64,
     pub denial_code: String,
-    pub denial_reason: String,
+    pub denial_reason_hash: BytesN<32>,
     pub is_appealable: bool,
 }
 
@@ -57,7 +59,7 @@ pub struct DenialInfo {
 pub struct InsurerPaymentRecord {
     pub payment_date: u64,
     pub payment_amount: i128,
-    pub payment_reference: String,
+    pub payment_reference_hash: BytesN<32>,
 }
 
 #[contracttype]
@@ -77,8 +79,9 @@ pub struct ClaimRecord {
     pub policy_id: u64,
     pub service_date: u64,
     pub service_codes: Vec<ServiceLine>,
-    pub diagnosis_codes: Vec<String>,
+    pub diagnosis_hashes: Vec<BytesN<32>>,
     pub details_hash: BytesN<32>,
+    pub policy: PolicyMetadata,
     pub total_amount: i128,
     pub status: ClaimStatus,
     pub approved_amount: Option<i128>,
@@ -93,7 +96,7 @@ pub struct ClaimRecord {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DataKey {
     Admin,
-    Insurer(Address),        // insurer_id -> bool
+    Insurer(Address), // insurer_id -> bool
     ClaimCounter,
     Claim(u64),
     DenialInfos(u64),

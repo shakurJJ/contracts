@@ -2,7 +2,20 @@
 #![allow(deprecated)]
 
 use super::*;
-use soroban_sdk::{testutils::Address as _, BytesN, Env, String, Vec};
+use shared::privacy::PolicyMetadata;
+use soroban_sdk::{testutils::Address as _, BytesN, Env, String, Symbol, Vec};
+
+fn policy(env: &Env) -> PolicyMetadata {
+    PolicyMetadata {
+        retention_class: Symbol::new(env, "financial"),
+        access_policy_hash: BytesN::from_array(env, &[7u8; 32]),
+        purpose: Symbol::new(env, "claims"),
+    }
+}
+
+fn reference_hash(env: &Env, seed: u8) -> BytesN<32> {
+    BytesN::from_array(env, &[seed; 32])
+}
 
 fn build_services(env: &Env, amount: i128) -> Vec<ServiceLine> {
     let mut services = Vec::new(env);
@@ -16,7 +29,15 @@ fn build_services(env: &Env, amount: i128) -> Vec<ServiceLine> {
     services
 }
 
-fn setup(env: &Env) -> (MedicalClaimsSystemClient<'static>, Address, Address, Address, Address) {
+fn setup(
+    env: &Env,
+) -> (
+    MedicalClaimsSystemClient<'static>,
+    Address,
+    Address,
+    Address,
+    Address,
+) {
     let contract_id = env.register_contract(None, MedicalClaimsSystem);
     let client = MedicalClaimsSystemClient::new(env, &contract_id);
     let admin = Address::generate(env);
@@ -55,6 +76,7 @@ fn test_full_claim_lifecycle() {
         &make_services(&env),
         &Vec::new(&env),
         &BytesN::from_array(&env, &[0; 32]),
+        &policy(&env),
         &15000,
     );
 
@@ -73,9 +95,9 @@ fn test_full_claim_lifecycle() {
     client.process_payment(
         &claim_id,
         &insurer,
-        &8000,
+        &10000,
         &1690100000,
-        &String::from_str(&env, "REF_123"),
+        &reference_hash(&env, 8),
     );
 
     client.apply_patient_payment(&claim_id, &patient, &2000, &1690200000);
@@ -105,17 +127,12 @@ fn test_unregistered_insurer_cannot_adjudicate() {
         &make_services(&env),
         &Vec::new(&env),
         &BytesN::from_array(&env, &[0; 32]),
+        &policy(&env),
         &5000,
     );
 
-    let result = client.try_adjudicate_claim(
-        &claim_id,
-        &rogue,
-        &Vec::new(&env),
-        &Vec::new(&env),
-        &0,
-        &0,
-    );
+    let result =
+        client.try_adjudicate_claim(&claim_id, &rogue, &Vec::new(&env), &Vec::new(&env), &0, &0);
     assert_eq!(result, Err(Ok(Error::InsurerNotRegistered)));
 }
 
@@ -136,6 +153,7 @@ fn test_wrong_insurer_cannot_adjudicate() {
         &make_services(&env),
         &Vec::new(&env),
         &BytesN::from_array(&env, &[0; 32]),
+        &policy(&env),
         &5000,
     );
 
@@ -166,6 +184,7 @@ fn test_unregistered_insurer_cannot_process_payment() {
         &make_services(&env),
         &Vec::new(&env),
         &BytesN::from_array(&env, &[0; 32]),
+        &policy(&env),
         &5000,
     );
 
@@ -174,17 +193,12 @@ fn test_unregistered_insurer_cannot_process_payment() {
         &insurer,
         &Vec::new(&env),
         &Vec::new(&env),
-        &5000,
+        &4500,
         &500,
     );
 
-    let result = client.try_process_payment(
-        &claim_id,
-        &rogue,
-        &4500,
-        &200,
-        &String::from_str(&env, "REF"),
-    );
+    let result =
+        client.try_process_payment(&claim_id, &rogue, &4500, &200, &reference_hash(&env, 8));
     assert_eq!(result, Err(Ok(Error::InsurerNotRegistered)));
 }
 
@@ -204,6 +218,7 @@ fn test_submit_claim_with_unregistered_insurer_fails() {
         &make_services(&env),
         &Vec::new(&env),
         &BytesN::from_array(&env, &[0; 32]),
+        &policy(&env),
         &5000,
     );
     assert_eq!(result, Err(Ok(Error::InsurerNotRegistered)));
@@ -224,6 +239,7 @@ fn test_appeal_workflow() {
         &make_services(&env),
         &Vec::new(&env),
         &BytesN::from_array(&env, &[1; 32]),
+        &policy(&env),
         &25000,
     );
 
@@ -231,12 +247,17 @@ fn test_appeal_workflow() {
     denials.push_back(DenialInfo {
         line_number: 1,
         denial_code: String::from_str(&env, "CO-50"),
-        denial_reason: String::from_str(&env, "Not deemed medically necessary"),
+        denial_reason_hash: reference_hash(&env, 9),
         is_appealable: true,
     });
 
     client.adjudicate_claim(&claim_id, &insurer, &Vec::new(&env), &denials, &0, &0);
-    client.appeal_denial(&claim_id, &provider, &1, &BytesN::from_array(&env, &[2; 32]));
+    client.appeal_denial(
+        &claim_id,
+        &provider,
+        &1,
+        &BytesN::from_array(&env, &[2; 32]),
+    );
 
     // Already at level 1 — should fail
     let res = client.try_appeal_denial(
@@ -248,9 +269,19 @@ fn test_appeal_workflow() {
     assert!(res.is_err());
 
     client.adjudicate_claim(&claim_id, &insurer, &Vec::new(&env), &denials, &0, &0);
-    client.appeal_denial(&claim_id, &provider, &2, &BytesN::from_array(&env, &[3; 32]));
+    client.appeal_denial(
+        &claim_id,
+        &provider,
+        &2,
+        &BytesN::from_array(&env, &[3; 32]),
+    );
     client.adjudicate_claim(&claim_id, &insurer, &Vec::new(&env), &denials, &0, &0);
-    client.appeal_denial(&claim_id, &provider, &3, &BytesN::from_array(&env, &[4; 32]));
+    client.appeal_denial(
+        &claim_id,
+        &provider,
+        &3,
+        &BytesN::from_array(&env, &[4; 32]),
+    );
 }
 
 #[test]
