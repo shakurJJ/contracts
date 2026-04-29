@@ -22,25 +22,25 @@
                   "symbol": "AB_POS"
                 },
                 {
-                  "string": "Penicillin, Sulfa drugs"
+                  "bytes": "1515151515151515151515151515151515151515151515151515151515151515"
                 },
                 {
                   "vec": [
                     {
-                      "string": "Diabetes Type 1"
+                      "bytes": "1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f"
                     },
                     {
-                      "string": "Asthma"
+                      "bytes": "1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f"
                     }
                   ]
                 },
                 {
                   "vec": [
                     {
-                      "string": "Insulin pump"
+                      "bytes": "2929292929292929292929292929292929292929292929292929292929292929"
                     },
                     {
-                      "string": "Albuterol inhaler"
+                      "bytes": "2929292929292929292929292929292929292929292929292929292929292929"
                     }
                   ]
                 },
@@ -58,10 +58,10 @@
                         },
                         {
                           "key": {
-                            "symbol": "name"
+                            "symbol": "contact_label_hash"
                           },
                           "val": {
-                            "string": "Jane Doe"
+                            "bytes": "0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b"
                           }
                         },
                         {
@@ -74,10 +74,10 @@
                         },
                         {
                           "key": {
-                            "symbol": "relationship"
+                            "symbol": "relationship_class"
                           },
                           "val": {
-                            "string": "Spouse"
+                            "symbol": "spouse"
                           }
                         }
                       ]
@@ -94,10 +94,10 @@
                         },
                         {
                           "key": {
-                            "symbol": "name"
+                            "symbol": "contact_label_hash"
                           },
                           "val": {
-                            "string": "John Doe Sr"
+                            "bytes": "0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c"
                           }
                         },
                         {
@@ -110,10 +110,10 @@
                         },
                         {
                           "key": {
-                            "symbol": "relationship"
+                            "symbol": "relationship_class"
                           },
                           "val": {
-                            "string": "Parent"
+                            "symbol": "parent"
                           }
                         }
                       ]
@@ -147,7 +147,7 @@
                   "symbol": "ALLERGY"
                 },
                 {
-                  "string": "Anaphylaxis risk"
+                  "bytes": "3333333333333333333333333333333333333333333333333333333333333333"
                 },
                 {
                   "symbol": "CRITICAL"
@@ -178,10 +178,10 @@
                   "symbol": "RESP_DIST"
                 },
                 {
-                  "string": "Severe asthma attack"
+                  "bytes": "3333333333333333333333333333333333333333333333333333333333333333"
                 },
                 {
-                  "string": "ER"
+                  "bytes": "3333333333333333333333333333333333333333333333333333333333333333"
                 }
               ]
             }
@@ -191,8 +191,50 @@
       ]
     ],
     [],
-    [],
-    []
+    [
+      [
+        "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
+        {
+          "function": {
+            "contract_fn": {
+              "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+              "function_name": "get_critical_alerts",
+              "args": [
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                },
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                }
+              ]
+            }
+          },
+          "sub_invocations": []
+        }
+      ]
+    ],
+    [
+      [
+        "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
+        {
+          "function": {
+            "contract_fn": {
+              "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+              "function_name": "get_emergency_access_logs",
+              "args": [
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                },
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                }
+              ]
+            }
+          },
+          "sub_invocations": []
+        }
+      ]
+    ]
   ],
   "ledger": {
     "protocol_version": 23,
@@ -245,10 +287,10 @@
                       "map": [
                         {
                           "key": {
-                            "symbol": "alert_text"
+                            "symbol": "alert_text_hash"
                           },
                           "val": {
-                            "string": "Anaphylaxis risk"
+                            "bytes": "3333333333333333333333333333333333333333333333333333333333333333"
                           }
                         },
                         {
@@ -351,18 +393,18 @@
                         },
                         {
                           "key": {
-                            "symbol": "justification"
+                            "symbol": "justification_hash"
                           },
                           "val": {
-                            "string": "Severe asthma attack"
+                            "bytes": "3333333333333333333333333333333333333333333333333333333333333333"
                           }
                         },
                         {
                           "key": {
-                            "symbol": "location"
+                            "symbol": "location_hash"
                           },
                           "val": {
-                            "string": "ER"
+                            "bytes": "3333333333333333333333333333333333333333333333333333333333333333"
                           }
                         },
                         {
@@ -479,15 +521,15 @@
                   "map": [
                     {
                       "key": {
-                        "symbol": "active_conditions"
+                        "symbol": "active_condition_hashes"
                       },
                       "val": {
                         "vec": [
                           {
-                            "string": "Diabetes Type 1"
+                            "bytes": "1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f"
                           },
                           {
-                            "string": "Asthma"
+                            "bytes": "1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f"
                           }
                         ]
                       }
@@ -502,27 +544,27 @@
                     },
                     {
                       "key": {
-                        "symbol": "critical_allergies"
+                        "symbol": "critical_allergy_hashes"
                       },
                       "val": {
                         "vec": [
                           {
-                            "string": "Penicillin, Sulfa drugs"
+                            "bytes": "1515151515151515151515151515151515151515151515151515151515151515"
                           }
                         ]
                       }
                     },
                     {
                       "key": {
-                        "symbol": "current_medications"
+                        "symbol": "current_medication_hashes"
                       },
                       "val": {
                         "vec": [
                           {
-                            "string": "Insulin pump"
+                            "bytes": "2929292929292929292929292929292929292929292929292929292929292929"
                           },
                           {
-                            "string": "Albuterol inhaler"
+                            "bytes": "2929292929292929292929292929292929292929292929292929292929292929"
                           }
                         ]
                       }
@@ -553,10 +595,10 @@
                               },
                               {
                                 "key": {
-                                  "symbol": "name"
+                                  "symbol": "contact_label_hash"
                                 },
                                 "val": {
-                                  "string": "Jane Doe"
+                                  "bytes": "0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b"
                                 }
                               },
                               {
@@ -569,10 +611,10 @@
                               },
                               {
                                 "key": {
-                                  "symbol": "relationship"
+                                  "symbol": "relationship_class"
                                 },
                                 "val": {
-                                  "string": "Spouse"
+                                  "symbol": "spouse"
                                 }
                               }
                             ]
@@ -589,10 +631,10 @@
                               },
                               {
                                 "key": {
-                                  "symbol": "name"
+                                  "symbol": "contact_label_hash"
                                 },
                                 "val": {
-                                  "string": "John Doe Sr"
+                                  "bytes": "0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c"
                                 }
                               },
                               {
@@ -605,10 +647,10 @@
                               },
                               {
                                 "key": {
-                                  "symbol": "relationship"
+                                  "symbol": "relationship_class"
                                 },
                                 "val": {
-                                  "string": "Parent"
+                                  "symbol": "parent"
                                 }
                               }
                             ]
@@ -679,6 +721,72 @@
                 "key": {
                   "ledger_key_nonce": {
                     "nonce": "801925984706572462"
+                  }
+                },
+                "durability": "temporary",
+                "val": "void"
+              }
+            },
+            "ext": "v0"
+          },
+          6311999
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
+            "key": {
+              "ledger_key_nonce": {
+                "nonce": "2032731177588607455"
+              }
+            },
+            "durability": "temporary"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
+                "key": {
+                  "ledger_key_nonce": {
+                    "nonce": "2032731177588607455"
+                  }
+                },
+                "durability": "temporary",
+                "val": "void"
+              }
+            },
+            "ext": "v0"
+          },
+          6311999
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
+            "key": {
+              "ledger_key_nonce": {
+                "nonce": "4837995959683129791"
+              }
+            },
+            "durability": "temporary"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
+                "key": {
+                  "ledger_key_nonce": {
+                    "nonce": "4837995959683129791"
                   }
                 },
                 "durability": "temporary",

@@ -22,7 +22,7 @@
                   "symbol": "A_NEG"
                 },
                 {
-                  "string": "Aspirin"
+                  "bytes": "1515151515151515151515151515151515151515151515151515151515151515"
                 },
                 {
                   "vec": []
@@ -60,10 +60,10 @@
                   "symbol": "TRAUMA"
                 },
                 {
-                  "string": "MVA victim"
+                  "bytes": "3333333333333333333333333333333333333333333333333333333333333333"
                 },
                 {
-                  "string": "Trauma Bay 1"
+                  "bytes": "3333333333333333333333333333333333333333333333333333333333333333"
                 }
               ]
             }
@@ -91,10 +91,10 @@
                   "symbol": "CONSULT"
                 },
                 {
-                  "string": "Specialist consult"
+                  "bytes": "3333333333333333333333333333333333333333333333333333333333333333"
                 },
                 {
-                  "string": "ICU"
+                  "bytes": "3333333333333333333333333333333333333333333333333333333333333333"
                 }
               ]
             }
@@ -103,7 +103,28 @@
         }
       ]
     ],
-    []
+    [
+      [
+        "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
+        {
+          "function": {
+            "contract_fn": {
+              "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+              "function_name": "get_emergency_access_logs",
+              "args": [
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                },
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                }
+              ]
+            }
+          },
+          "sub_invocations": []
+        }
+      ]
+    ]
   ],
   "ledger": {
     "protocol_version": 23,
@@ -172,18 +193,18 @@
                         },
                         {
                           "key": {
-                            "symbol": "justification"
+                            "symbol": "justification_hash"
                           },
                           "val": {
-                            "string": "MVA victim"
+                            "bytes": "3333333333333333333333333333333333333333333333333333333333333333"
                           }
                         },
                         {
                           "key": {
-                            "symbol": "location"
+                            "symbol": "location_hash"
                           },
                           "val": {
-                            "string": "Trauma Bay 1"
+                            "bytes": "3333333333333333333333333333333333333333333333333333333333333333"
                           }
                         },
                         {
@@ -216,18 +237,18 @@
                         },
                         {
                           "key": {
-                            "symbol": "justification"
+                            "symbol": "justification_hash"
                           },
                           "val": {
-                            "string": "Specialist consult"
+                            "bytes": "3333333333333333333333333333333333333333333333333333333333333333"
                           }
                         },
                         {
                           "key": {
-                            "symbol": "location"
+                            "symbol": "location_hash"
                           },
                           "val": {
-                            "string": "ICU"
+                            "bytes": "3333333333333333333333333333333333333333333333333333333333333333"
                           }
                         },
                         {
@@ -288,7 +309,7 @@
                   "map": [
                     {
                       "key": {
-                        "symbol": "active_conditions"
+                        "symbol": "active_condition_hashes"
                       },
                       "val": {
                         "vec": []
@@ -304,19 +325,19 @@
                     },
                     {
                       "key": {
-                        "symbol": "critical_allergies"
+                        "symbol": "critical_allergy_hashes"
                       },
                       "val": {
                         "vec": [
                           {
-                            "string": "Aspirin"
+                            "bytes": "1515151515151515151515151515151515151515151515151515151515151515"
                           }
                         ]
                       }
                     },
                     {
                       "key": {
-                        "symbol": "current_medications"
+                        "symbol": "current_medication_hashes"
                       },
                       "val": {
                         "vec": []
@@ -401,6 +422,39 @@
                 "key": {
                   "ledger_key_nonce": {
                     "nonce": "801925984706572462"
+                  }
+                },
+                "durability": "temporary",
+                "val": "void"
+              }
+            },
+            "ext": "v0"
+          },
+          6311999
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
+            "key": {
+              "ledger_key_nonce": {
+                "nonce": "4837995959683129791"
+              }
+            },
+            "durability": "temporary"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
+                "key": {
+                  "ledger_key_nonce": {
+                    "nonce": "4837995959683129791"
                   }
                 },
                 "durability": "temporary",

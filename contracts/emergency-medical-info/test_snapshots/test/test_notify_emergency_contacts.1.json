@@ -22,7 +22,7 @@
                   "symbol": "A_POS"
                 },
                 {
-                  "string": "None"
+                  "bytes": "1515151515151515151515151515151515151515151515151515151515151515"
                 },
                 {
                   "vec": []
@@ -44,10 +44,10 @@
                         },
                         {
                           "key": {
-                            "symbol": "name"
+                            "symbol": "contact_label_hash"
                           },
                           "val": {
-                            "string": "Jane Doe"
+                            "bytes": "0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b"
                           }
                         },
                         {
@@ -60,10 +60,10 @@
                         },
                         {
                           "key": {
-                            "symbol": "relationship"
+                            "symbol": "relationship_class"
                           },
                           "val": {
-                            "string": "Spouse"
+                            "symbol": "spouse"
                           }
                         }
                       ]
@@ -80,10 +80,10 @@
                         },
                         {
                           "key": {
-                            "symbol": "name"
+                            "symbol": "contact_label_hash"
                           },
                           "val": {
-                            "string": "John Doe Sr"
+                            "bytes": "0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c"
                           }
                         },
                         {
@@ -96,10 +96,10 @@
                         },
                         {
                           "key": {
-                            "symbol": "relationship"
+                            "symbol": "relationship_class"
                           },
                           "val": {
-                            "string": "Parent"
+                            "symbol": "parent"
                           }
                         }
                       ]
@@ -221,7 +221,7 @@
                   "map": [
                     {
                       "key": {
-                        "symbol": "active_conditions"
+                        "symbol": "active_condition_hashes"
                       },
                       "val": {
                         "vec": []
@@ -237,19 +237,19 @@
                     },
                     {
                       "key": {
-                        "symbol": "critical_allergies"
+                        "symbol": "critical_allergy_hashes"
                       },
                       "val": {
                         "vec": [
                           {
-                            "string": "None"
+                            "bytes": "1515151515151515151515151515151515151515151515151515151515151515"
                           }
                         ]
                       }
                     },
                     {
                       "key": {
-                        "symbol": "current_medications"
+                        "symbol": "current_medication_hashes"
                       },
                       "val": {
                         "vec": []
@@ -281,10 +281,10 @@
                               },
                               {
                                 "key": {
-                                  "symbol": "name"
+                                  "symbol": "contact_label_hash"
                                 },
                                 "val": {
-                                  "string": "Jane Doe"
+                                  "bytes": "0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b"
                                 }
                               },
                               {
@@ -297,10 +297,10 @@
                               },
                               {
                                 "key": {
-                                  "symbol": "relationship"
+                                  "symbol": "relationship_class"
                                 },
                                 "val": {
-                                  "string": "Spouse"
+                                  "symbol": "spouse"
                                 }
                               }
                             ]
@@ -317,10 +317,10 @@
                               },
                               {
                                 "key": {
-                                  "symbol": "name"
+                                  "symbol": "contact_label_hash"
                                 },
                                 "val": {
-                                  "string": "John Doe Sr"
+                                  "bytes": "0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c"
                                 }
                               },
                               {
@@ -333,10 +333,10 @@
                               },
                               {
                                 "key": {
-                                  "symbol": "relationship"
+                                  "symbol": "relationship_class"
                                 },
                                 "val": {
-                                  "string": "Parent"
+                                  "symbol": "parent"
                                 }
                               }
                             ]

@@ -22,7 +22,7 @@
                   "symbol": "AB_NEG"
                 },
                 {
-                  "string": "Shellfish"
+                  "bytes": "1515151515151515151515151515151515151515151515151515151515151515"
                 },
                 {
                   "vec": []
@@ -44,10 +44,10 @@
                         },
                         {
                           "key": {
-                            "symbol": "name"
+                            "symbol": "contact_label_hash"
                           },
                           "val": {
-                            "string": "Jane Doe"
+                            "bytes": "0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b"
                           }
                         },
                         {
@@ -60,10 +60,10 @@
                         },
                         {
                           "key": {
-                            "symbol": "relationship"
+                            "symbol": "relationship_class"
                           },
                           "val": {
-                            "string": "Spouse"
+                            "symbol": "spouse"
                           }
                         }
                       ]
@@ -80,10 +80,10 @@
                         },
                         {
                           "key": {
-                            "symbol": "name"
+                            "symbol": "contact_label_hash"
                           },
                           "val": {
-                            "string": "John Doe Sr"
+                            "bytes": "0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c"
                           }
                         },
                         {
@@ -96,10 +96,10 @@
                         },
                         {
                           "key": {
-                            "symbol": "relationship"
+                            "symbol": "relationship_class"
                           },
                           "val": {
-                            "string": "Parent"
+                            "symbol": "parent"
                           }
                         }
                       ]
@@ -133,10 +133,10 @@
                   "symbol": "CARDIAC"
                 },
                 {
-                  "string": "Patient unconscious, cardiac arrest"
+                  "bytes": "3333333333333333333333333333333333333333333333333333333333333333"
                 },
                 {
-                  "string": "ER Room 3"
+                  "bytes": "3434343434343434343434343434343434343434343434343434343434343434"
                 }
               ]
             }
@@ -145,7 +145,28 @@
         }
       ]
     ],
-    []
+    [
+      [
+        "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
+        {
+          "function": {
+            "contract_fn": {
+              "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+              "function_name": "get_emergency_access_logs",
+              "args": [
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                },
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
+                }
+              ]
+            }
+          },
+          "sub_invocations": []
+        }
+      ]
+    ]
   ],
   "ledger": {
     "protocol_version": 23,
@@ -214,18 +235,18 @@
                         },
                         {
                           "key": {
-                            "symbol": "justification"
+                            "symbol": "justification_hash"
                           },
                           "val": {
-                            "string": "Patient unconscious, cardiac arrest"
+                            "bytes": "3333333333333333333333333333333333333333333333333333333333333333"
                           }
                         },
                         {
                           "key": {
-                            "symbol": "location"
+                            "symbol": "location_hash"
                           },
                           "val": {
-                            "string": "ER Room 3"
+                            "bytes": "3434343434343434343434343434343434343434343434343434343434343434"
                           }
                         },
                         {
@@ -286,7 +307,7 @@
                   "map": [
                     {
                       "key": {
-                        "symbol": "active_conditions"
+                        "symbol": "active_condition_hashes"
                       },
                       "val": {
                         "vec": []
@@ -302,19 +323,19 @@
                     },
                     {
                       "key": {
-                        "symbol": "critical_allergies"
+                        "symbol": "critical_allergy_hashes"
                       },
                       "val": {
                         "vec": [
                           {
-                            "string": "Shellfish"
+                            "bytes": "1515151515151515151515151515151515151515151515151515151515151515"
                           }
                         ]
                       }
                     },
                     {
                       "key": {
-                        "symbol": "current_medications"
+                        "symbol": "current_medication_hashes"
                       },
                       "val": {
                         "vec": []
@@ -346,10 +367,10 @@
                               },
                               {
                                 "key": {
-                                  "symbol": "name"
+                                  "symbol": "contact_label_hash"
                                 },
                                 "val": {
-                                  "string": "Jane Doe"
+                                  "bytes": "0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b"
                                 }
                               },
                               {
@@ -362,10 +383,10 @@
                               },
                               {
                                 "key": {
-                                  "symbol": "relationship"
+                                  "symbol": "relationship_class"
                                 },
                                 "val": {
-                                  "string": "Spouse"
+                                  "symbol": "spouse"
                                 }
                               }
                             ]
@@ -382,10 +403,10 @@
                               },
                               {
                                 "key": {
-                                  "symbol": "name"
+                                  "symbol": "contact_label_hash"
                                 },
                                 "val": {
-                                  "string": "John Doe Sr"
+                                  "bytes": "0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c"
                                 }
                               },
                               {
@@ -398,10 +419,10 @@
                               },
                               {
                                 "key": {
-                                  "symbol": "relationship"
+                                  "symbol": "relationship_class"
                                 },
                                 "val": {
-                                  "string": "Parent"
+                                  "symbol": "parent"
                                 }
                               }
                             ]
@@ -472,6 +493,39 @@
                 "key": {
                   "ledger_key_nonce": {
                     "nonce": "801925984706572462"
+                  }
+                },
+                "durability": "temporary",
+                "val": "void"
+              }
+            },
+            "ext": "v0"
+          },
+          6311999
+        ]
+      ],
+      [
+        {
+          "contract_data": {
+            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
+            "key": {
+              "ledger_key_nonce": {
+                "nonce": "1033654523790656264"
+              }
+            },
+            "durability": "temporary"
+          }
+        },
+        [
+          {
+            "last_modified_ledger_seq": 0,
+            "data": {
+              "contract_data": {
+                "ext": "v0",
+                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
+                "key": {
+                  "ledger_key_nonce": {
+                    "nonce": "1033654523790656264"
                   }
                 },
                 "durability": "temporary",

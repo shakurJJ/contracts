@@ -4,19 +4,23 @@
 use super::*;
 use soroban_sdk::{testutils::Address as _, Env};
 
+fn hash(env: &Env, seed: u8) -> BytesN<32> {
+    BytesN::from_array(env, &[seed; 32])
+}
+
 fn create_test_emergency_contacts(env: &Env) -> Vec<EmergencyContact> {
     let mut contacts = Vec::new(env);
 
     contacts.push_back(EmergencyContact {
-        name: String::from_str(env, "Jane Doe"),
-        relationship: String::from_str(env, "Spouse"),
+        contact_label_hash: hash(env, 11),
+        relationship_class: Symbol::new(env, "spouse"),
         contact_hash: BytesN::from_array(env, &[1u8; 32]),
         priority: 1,
     });
 
     contacts.push_back(EmergencyContact {
-        name: String::from_str(env, "John Doe Sr"),
-        relationship: String::from_str(env, "Parent"),
+        contact_label_hash: hash(env, 12),
+        relationship_class: Symbol::new(env, "parent"),
         contact_hash: BytesN::from_array(env, &[2u8; 32]),
         priority: 2,
     });
@@ -34,15 +38,15 @@ fn test_set_emergency_profile() {
     env.mock_all_auths();
 
     let blood_type = Symbol::new(&env, "O_POS");
-    let allergies = String::from_str(&env, "Penicillin, Latex");
+    let allergies = hash(&env, 21);
 
     let mut conditions = Vec::new(&env);
-    conditions.push_back(String::from_str(&env, "Diabetes Type 2"));
-    conditions.push_back(String::from_str(&env, "Hypertension"));
+    conditions.push_back(hash(&env, 31));
+    conditions.push_back(hash(&env, 31));
 
     let mut medications = Vec::new(&env);
-    medications.push_back(String::from_str(&env, "Metformin 500mg"));
-    medications.push_back(String::from_str(&env, "Lisinopril 10mg"));
+    medications.push_back(hash(&env, 41));
+    medications.push_back(hash(&env, 41));
 
     let contacts = create_test_emergency_contacts(&env);
 
@@ -61,8 +65,8 @@ fn test_set_emergency_profile() {
 
     let profile = client.get_emergency_info(&patient, &patient);
     assert_eq!(profile.blood_type, blood_type);
-    assert_eq!(profile.active_conditions.len(), 2);
-    assert_eq!(profile.current_medications.len(), 2);
+    assert_eq!(profile.active_condition_hashes.len(), 2);
+    assert_eq!(profile.current_medication_hashes.len(), 2);
     assert_eq!(profile.emergency_contacts.len(), 2);
     assert!(!profile.dnr_status);
 }
@@ -79,7 +83,7 @@ fn test_emergency_access_request() {
 
     // Setup emergency profile
     let blood_type = Symbol::new(&env, "AB_NEG");
-    let allergies = String::from_str(&env, "Shellfish");
+    let allergies = hash(&env, 21);
     let conditions = Vec::new(&env);
     let medications = Vec::new(&env);
     let contacts = create_test_emergency_contacts(&env);
@@ -96,8 +100,8 @@ fn test_emergency_access_request() {
 
     // Emergency access request
     let emergency_type = Symbol::new(&env, "CARDIAC");
-    let justification = String::from_str(&env, "Patient unconscious, cardiac arrest");
-    let location = String::from_str(&env, "ER Room 3");
+    let justification = hash(&env, 51);
+    let location = hash(&env, 52);
 
     let profile = client.emergency_access_request(
         &provider,
@@ -128,7 +132,7 @@ fn test_add_critical_alert() {
     env.mock_all_auths();
 
     let alert_type = Symbol::new(&env, "ALLERGY");
-    let alert_text = String::from_str(&env, "Severe reaction to contrast dye");
+    let alert_text = hash(&env, 61);
     let severity = Symbol::new(&env, "CRITICAL");
 
     client.add_critical_alert(&patient, &provider, &alert_type, &alert_text, &severity);
@@ -154,7 +158,7 @@ fn test_multiple_critical_alerts() {
         &patient,
         &provider,
         &Symbol::new(&env, "ALLERGY"),
-        &String::from_str(&env, "Penicillin allergy"),
+        &hash(&env, 51),
         &Symbol::new(&env, "HIGH"),
     );
 
@@ -162,7 +166,7 @@ fn test_multiple_critical_alerts() {
         &patient,
         &provider,
         &Symbol::new(&env, "CONDITION"),
-        &String::from_str(&env, "Hemophilia"),
+        &hash(&env, 51),
         &Symbol::new(&env, "CRITICAL"),
     );
 
@@ -181,7 +185,7 @@ fn test_notify_emergency_contacts() {
 
     // Setup profile with contacts
     let blood_type = Symbol::new(&env, "A_POS");
-    let allergies = String::from_str(&env, "None");
+    let allergies = hash(&env, 21);
     let conditions = Vec::new(&env);
     let medications = Vec::new(&env);
     let contacts = create_test_emergency_contacts(&env);
@@ -219,7 +223,7 @@ fn test_record_dnr_order() {
 
     // Setup profile first
     let blood_type = Symbol::new(&env, "B_POS");
-    let allergies = String::from_str(&env, "None");
+    let allergies = hash(&env, 21);
     let conditions = Vec::new(&env);
     let medications = Vec::new(&env);
     let contacts = Vec::new(&env);
@@ -260,7 +264,7 @@ fn test_dnr_with_advance_directives() {
     env.mock_all_auths();
 
     let blood_type = Symbol::new(&env, "O_NEG");
-    let allergies = String::from_str(&env, "None");
+    let allergies = hash(&env, 21);
     let conditions = Vec::new(&env);
     let medications = Vec::new(&env);
     let contacts = Vec::new(&env);
@@ -296,8 +300,8 @@ fn test_emergency_access_without_profile() {
         &provider,
         &patient,
         &Symbol::new(&env, "TRAUMA"),
-        &String::from_str(&env, "Emergency"),
-        &String::from_str(&env, "ER"),
+        &hash(&env, 51),
+        &hash(&env, 51),
     );
     assert_eq!(result, Err(Ok(Error::EmergencyProfileNotFound)));
 }
@@ -315,7 +319,7 @@ fn test_emergency_access_audit_trail() {
 
     // Setup profile
     let blood_type = Symbol::new(&env, "A_NEG");
-    let allergies = String::from_str(&env, "Aspirin");
+    let allergies = hash(&env, 21);
     let conditions = Vec::new(&env);
     let medications = Vec::new(&env);
     let contacts = Vec::new(&env);
@@ -335,16 +339,16 @@ fn test_emergency_access_audit_trail() {
         &provider1,
         &patient,
         &Symbol::new(&env, "TRAUMA"),
-        &String::from_str(&env, "MVA victim"),
-        &String::from_str(&env, "Trauma Bay 1"),
+        &hash(&env, 51),
+        &hash(&env, 51),
     );
 
     client.emergency_access_request(
         &provider2,
         &patient,
         &Symbol::new(&env, "CONSULT"),
-        &String::from_str(&env, "Specialist consult"),
-        &String::from_str(&env, "ICU"),
+        &hash(&env, 51),
+        &hash(&env, 51),
     );
 
     // Verify audit trail
@@ -368,7 +372,7 @@ fn test_has_emergency_profile() {
 
     // Create profile
     let blood_type = Symbol::new(&env, "O_POS");
-    let allergies = String::from_str(&env, "None");
+    let allergies = hash(&env, 21);
     let conditions = Vec::new(&env);
     let medications = Vec::new(&env);
     let contacts = Vec::new(&env);
@@ -399,15 +403,15 @@ fn test_comprehensive_emergency_scenario() {
 
     // 1. Setup comprehensive emergency profile
     let blood_type = Symbol::new(&env, "AB_POS");
-    let allergies = String::from_str(&env, "Penicillin, Sulfa drugs");
+    let allergies = hash(&env, 21);
 
     let mut conditions = Vec::new(&env);
-    conditions.push_back(String::from_str(&env, "Diabetes Type 1"));
-    conditions.push_back(String::from_str(&env, "Asthma"));
+    conditions.push_back(hash(&env, 31));
+    conditions.push_back(hash(&env, 31));
 
     let mut medications = Vec::new(&env);
-    medications.push_back(String::from_str(&env, "Insulin pump"));
-    medications.push_back(String::from_str(&env, "Albuterol inhaler"));
+    medications.push_back(hash(&env, 41));
+    medications.push_back(hash(&env, 41));
 
     let contacts = create_test_emergency_contacts(&env);
 
@@ -426,7 +430,7 @@ fn test_comprehensive_emergency_scenario() {
         &patient,
         &provider,
         &Symbol::new(&env, "ALLERGY"),
-        &String::from_str(&env, "Anaphylaxis risk"),
+        &hash(&env, 51),
         &Symbol::new(&env, "CRITICAL"),
     );
 
@@ -435,8 +439,8 @@ fn test_comprehensive_emergency_scenario() {
         &provider,
         &patient,
         &Symbol::new(&env, "RESP_DIST"),
-        &String::from_str(&env, "Severe asthma attack"),
-        &String::from_str(&env, "ER"),
+        &hash(&env, 51),
+        &hash(&env, 51),
     );
 
     // 4. Notify contacts
@@ -448,7 +452,7 @@ fn test_comprehensive_emergency_scenario() {
 
     // Verify complete scenario
     assert_eq!(profile.blood_type, blood_type);
-    assert_eq!(profile.active_conditions.len(), 2);
+    assert_eq!(profile.active_condition_hashes.len(), 2);
     assert_eq!(notified.len(), 2);
 
     let alerts = client.get_critical_alerts(&patient, &patient);

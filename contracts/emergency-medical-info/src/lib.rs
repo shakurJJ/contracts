@@ -2,7 +2,7 @@
 #![allow(clippy::too_many_arguments)]
 
 use soroban_sdk::{
-    contract, contracterror, contractimpl, contracttype, Address, BytesN, Env, String, Symbol, Vec,
+    contract, contracterror, contractimpl, contracttype, Address, BytesN, Env, Symbol, Vec,
 };
 
 /// --------------------
@@ -12,8 +12,8 @@ use soroban_sdk::{
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EmergencyContact {
-    pub name: String,
-    pub relationship: String,
+    pub contact_label_hash: BytesN<32>,
+    pub relationship_class: Symbol,
     pub contact_hash: BytesN<32>, // Encrypted contact info
     pub priority: u32,
 }
@@ -22,9 +22,9 @@ pub struct EmergencyContact {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EmergencyProfile {
     pub blood_type: Symbol,
-    pub critical_allergies: Vec<String>,
-    pub active_conditions: Vec<String>,
-    pub current_medications: Vec<String>,
+    pub critical_allergy_hashes: Vec<BytesN<32>>,
+    pub active_condition_hashes: Vec<BytesN<32>>,
+    pub current_medication_hashes: Vec<BytesN<32>>,
     pub dnr_status: bool,
     pub emergency_contacts: Vec<EmergencyContact>,
 }
@@ -34,7 +34,7 @@ pub struct EmergencyProfile {
 pub struct CriticalAlert {
     pub provider_id: Address,
     pub alert_type: Symbol,
-    pub alert_text: String,
+    pub alert_text_hash: BytesN<32>,
     pub severity: Symbol,
     pub timestamp: u64,
 }
@@ -44,8 +44,8 @@ pub struct CriticalAlert {
 pub struct EmergencyAccessLog {
     pub provider_id: Address,
     pub emergency_type: Symbol,
-    pub justification: String,
-    pub location: String,
+    pub justification_hash: BytesN<32>,
+    pub location_hash: BytesN<32>,
     pub access_time: u64,
 }
 
@@ -91,9 +91,9 @@ impl EmergencyMedicalInfo {
         env: Env,
         patient_id: Address,
         blood_type: Symbol,
-        allergies_summary: String,
-        critical_conditions: Vec<String>,
-        current_medications: Vec<String>,
+        allergy_summary_hash: BytesN<32>,
+        critical_condition_hashes: Vec<BytesN<32>>,
+        current_medication_hashes: Vec<BytesN<32>>,
         emergency_contacts: Vec<EmergencyContact>,
         advance_directives_hash: Option<BytesN<32>>,
     ) {
@@ -101,13 +101,13 @@ impl EmergencyMedicalInfo {
 
         let profile = EmergencyProfile {
             blood_type,
-            critical_allergies: {
+            critical_allergy_hashes: {
                 let mut allergies = Vec::new(&env);
-                allergies.push_back(allergies_summary);
+                allergies.push_back(allergy_summary_hash);
                 allergies
             },
-            active_conditions: critical_conditions,
-            current_medications,
+            active_condition_hashes: critical_condition_hashes,
+            current_medication_hashes,
             dnr_status: false,
             emergency_contacts,
         };
@@ -134,7 +134,7 @@ impl EmergencyMedicalInfo {
         patient_id: Address,
         provider_id: Address,
         alert_type: Symbol,
-        alert_text: String,
+        alert_text_hash: BytesN<32>,
         severity: Symbol,
     ) {
         provider_id.require_auth();
@@ -142,7 +142,7 @@ impl EmergencyMedicalInfo {
         let alert = CriticalAlert {
             provider_id,
             alert_type,
-            alert_text,
+            alert_text_hash,
             severity: severity.clone(),
             timestamp: env.ledger().timestamp(),
         };
@@ -165,8 +165,8 @@ impl EmergencyMedicalInfo {
         provider_id: Address,
         patient_id: Address,
         emergency_type: Symbol,
-        justification: String,
-        location: String,
+        justification_hash: BytesN<32>,
+        location_hash: BytesN<32>,
     ) -> Result<EmergencyProfile, Error> {
         provider_id.require_auth();
 
@@ -174,8 +174,8 @@ impl EmergencyMedicalInfo {
         let access_log = EmergencyAccessLog {
             provider_id: provider_id.clone(),
             emergency_type: emergency_type.clone(),
-            justification,
-            location,
+            justification_hash,
+            location_hash,
             access_time: env.ledger().timestamp(),
         };
 

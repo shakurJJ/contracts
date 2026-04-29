@@ -22,25 +22,25 @@
                   "symbol": "O_POS"
                 },
                 {
-                  "string": "Penicillin, Latex"
+                  "bytes": "1515151515151515151515151515151515151515151515151515151515151515"
                 },
                 {
                   "vec": [
                     {
-                      "string": "Diabetes Type 2"
+                      "bytes": "1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f"
                     },
                     {
-                      "string": "Hypertension"
+                      "bytes": "1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f"
                     }
                   ]
                 },
                 {
                   "vec": [
                     {
-                      "string": "Metformin 500mg"
+                      "bytes": "2929292929292929292929292929292929292929292929292929292929292929"
                     },
                     {
-                      "string": "Lisinopril 10mg"
+                      "bytes": "2929292929292929292929292929292929292929292929292929292929292929"
                     }
                   ]
                 },
@@ -58,10 +58,10 @@
                         },
                         {
                           "key": {
-                            "symbol": "name"
+                            "symbol": "contact_label_hash"
                           },
                           "val": {
-                            "string": "Jane Doe"
+                            "bytes": "0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b"
                           }
                         },
                         {
@@ -74,10 +74,10 @@
                         },
                         {
                           "key": {
-                            "symbol": "relationship"
+                            "symbol": "relationship_class"
                           },
                           "val": {
-                            "string": "Spouse"
+                            "symbol": "spouse"
                           }
                         }
                       ]
@@ -94,10 +94,10 @@
                         },
                         {
                           "key": {
-                            "symbol": "name"
+                            "symbol": "contact_label_hash"
                           },
                           "val": {
-                            "string": "John Doe Sr"
+                            "bytes": "0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c"
                           }
                         },
                         {
@@ -110,10 +110,10 @@
                         },
                         {
                           "key": {
-                            "symbol": "relationship"
+                            "symbol": "relationship_class"
                           },
                           "val": {
-                            "string": "Parent"
+                            "symbol": "parent"
                           }
                         }
                       ]
@@ -201,15 +201,15 @@
                   "map": [
                     {
                       "key": {
-                        "symbol": "active_conditions"
+                        "symbol": "active_condition_hashes"
                       },
                       "val": {
                         "vec": [
                           {
-                            "string": "Diabetes Type 2"
+                            "bytes": "1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f"
                           },
                           {
-                            "string": "Hypertension"
+                            "bytes": "1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f"
                           }
                         ]
                       }
@@ -224,27 +224,27 @@
                     },
                     {
                       "key": {
-                        "symbol": "critical_allergies"
+                        "symbol": "critical_allergy_hashes"
                       },
                       "val": {
                         "vec": [
                           {
-                            "string": "Penicillin, Latex"
+                            "bytes": "1515151515151515151515151515151515151515151515151515151515151515"
                           }
                         ]
                       }
                     },
                     {
                       "key": {
-                        "symbol": "current_medications"
+                        "symbol": "current_medication_hashes"
                       },
                       "val": {
                         "vec": [
                           {
-                            "string": "Metformin 500mg"
+                            "bytes": "2929292929292929292929292929292929292929292929292929292929292929"
                           },
                           {
-                            "string": "Lisinopril 10mg"
+                            "bytes": "2929292929292929292929292929292929292929292929292929292929292929"
                           }
                         ]
                       }
@@ -275,10 +275,10 @@
                               },
                               {
                                 "key": {
-                                  "symbol": "name"
+                                  "symbol": "contact_label_hash"
                                 },
                                 "val": {
-                                  "string": "Jane Doe"
+                                  "bytes": "0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b"
                                 }
                               },
                               {
@@ -291,10 +291,10 @@
                               },
                               {
                                 "key": {
-                                  "symbol": "relationship"
+                                  "symbol": "relationship_class"
                                 },
                                 "val": {
-                                  "string": "Spouse"
+                                  "symbol": "spouse"
                                 }
                               }
                             ]
@@ -311,10 +311,10 @@
                               },
                               {
                                 "key": {
-                                  "symbol": "name"
+                                  "symbol": "contact_label_hash"
                                 },
                                 "val": {
-                                  "string": "John Doe Sr"
+                                  "bytes": "0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c"
                                 }
                               },
                               {
@@ -327,10 +327,10 @@
                               },
                               {
                                 "key": {
-                                  "symbol": "relationship"
+                                  "symbol": "relationship_class"
                                 },
                                 "val": {
-                                  "string": "Parent"
+                                  "symbol": "parent"
                                 }
                               }
                             ]
