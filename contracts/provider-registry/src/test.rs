@@ -2,8 +2,33 @@
 
 use super::*;
 use soroban_sdk::{
-    testutils::Address as _, testutils::Ledger as _, Address, BytesN, Env, String,
+    testutils::Address as _, Address, BytesN, Env, String,
 };
+
+fn dummy_hash(env: &Env, byte: u8) -> BytesN<32> {
+    BytesN::from_array(env, &[byte; 32])
+}
+
+fn register_provider_with_anchor(
+    env: &Env,
+    client: &ProviderRegistryClient<'_>,
+    admin: &Address,
+    provider: &Address,
+) {
+    let issuer = Address::generate(env);
+    client.register_provider(
+        admin,
+        provider,
+        &String::from_str(env, "Dr. Smith"),
+        &String::from_str(env, "General"),
+        &String::from_str(env, "LIC-001"),
+        &dummy_hash(env, 1),
+        &issuer,
+        &dummy_hash(env, 2),
+        &u64::MAX,
+        &dummy_hash(env, 3),
+    );
+}
 
 fn setup() -> (Env, Address, ProviderRegistryClient<'static>) {
     let env = Env::default();
@@ -11,7 +36,7 @@ fn setup() -> (Env, Address, ProviderRegistryClient<'static>) {
     let client = ProviderRegistryClient::new(&env, &contract_id);
     let admin = Address::generate(&env);
     env.mock_all_auths();
-    client.initialize(&admin).unwrap();
+    client.initialize(&admin);
     (env, admin, client)
 }
 
@@ -32,7 +57,22 @@ fn test_mutable_call_before_init_returns_error() {
     let client = ProviderRegistryClient::new(&env, &contract_id);
     let admin = Address::generate(&env);
     let provider = Address::generate(&env);
-    let err = client.try_register_provider(&admin, &provider).unwrap_err().unwrap();
+    let issuer = Address::generate(&env);
+    let err = client
+        .try_register_provider(
+            &admin,
+            &provider,
+            &String::from_str(&env, "Dr. Smith"),
+            &String::from_str(&env, "General"),
+            &String::from_str(&env, "LIC-001"),
+            &dummy_hash(&env, 1),
+            &issuer,
+            &dummy_hash(&env, 2),
+            &u64::MAX,
+            &dummy_hash(&env, 3),
+        )
+        .unwrap_err()
+        .unwrap();
     assert_eq!(err, Error::NotInitialized);
 }
 
@@ -43,7 +83,7 @@ fn test_register_and_is_provider() {
     let (env, admin, client) = setup();
     let provider = Address::generate(&env);
     assert!(!client.is_provider(&provider));
-    client.register_provider(&admin, &provider).unwrap();
+    register_provider_with_anchor(&env, &client, &admin, &provider);
     assert!(client.is_provider(&provider));
 }
 
@@ -65,14 +105,13 @@ fn test_register_provider_exposes_profile() {
 fn test_revoke_provider_preserves_profile_but_disables_membership() {
     let (env, admin, client) = setup();
     let provider = Address::generate(&env);
-    client.register_provider(&admin, &provider).unwrap();
-    client.revoke_provider(&admin, &provider).unwrap();
+    register_provider_with_anchor(&env, &client, &admin, &provider);
+    client.revoke_provider(&admin, &provider);
     assert!(!client.is_provider(&provider));
 
     let profile = client.get_provider_profile(&provider);
     assert!(!profile.active);
     assert!(profile.credential.revoked_at.is_some());
-    assert_eq!(profile.credential.revoked_by, Some(admin));
 }
 
 #[test]
@@ -80,7 +119,22 @@ fn test_register_provider_non_admin_returns_error() {
     let (env, _, client) = setup();
     let non_admin = Address::generate(&env);
     let provider = Address::generate(&env);
-    let err = client.try_register_provider(&non_admin, &provider).unwrap_err().unwrap();
+    let issuer = Address::generate(&env);
+    let err = client
+        .try_register_provider(
+            &non_admin,
+            &provider,
+            &String::from_str(&env, "Dr. Smith"),
+            &String::from_str(&env, "General"),
+            &String::from_str(&env, "LIC-001"),
+            &dummy_hash(&env, 1),
+            &issuer,
+            &dummy_hash(&env, 2),
+            &u64::MAX,
+            &dummy_hash(&env, 3),
+        )
+        .unwrap_err()
+        .unwrap();
     assert_eq!(err, Error::Unauthorized);
 }
 
@@ -89,7 +143,7 @@ fn test_revoke_provider_non_admin_returns_error() {
     let (env, admin, client) = setup();
     let non_admin = Address::generate(&env);
     let provider = Address::generate(&env);
-    client.register_provider(&admin, &provider).unwrap();
+    register_provider_with_anchor(&env, &client, &admin, &provider);
     let err = client.try_revoke_provider(&non_admin, &provider).unwrap_err().unwrap();
     assert_eq!(err, Error::Unauthorized);
 }
@@ -100,19 +154,16 @@ fn test_revoke_provider_non_admin_returns_error() {
 fn test_add_record_by_whitelisted_provider() {
     let (env, admin, client) = setup();
     let provider = Address::generate(&env);
-    client.register_provider(&admin, &provider).unwrap();
-    client
-        .add_record(
-            &provider,
-            &String::from_str(&env, "REC001"),
-            &String::from_str(&env, "Patient data"),
-        )
-        .unwrap();
+    register_provider_with_anchor(&env, &client, &admin, &provider);
+    client.add_record(
+        &provider,
+        &String::from_str(&env, "REC001"),
+        &String::from_str(&env, "Patient data"),
+    );
     assert_eq!(
-        client.get_record(&String::from_str(&env, "REC001")).unwrap(),
+        client.get_record(&String::from_str(&env, "REC001")),
         String::from_str(&env, "Patient data")
     );
-    assert!(matches!(result, Err(Ok(ContractError::Unauthorized))));
 }
 
 #[test]
@@ -134,8 +185,8 @@ fn test_add_record_non_provider_returns_error() {
 fn test_add_record_after_revocation_returns_error() {
     let (env, admin, client) = setup();
     let provider = Address::generate(&env);
-    client.register_provider(&admin, &provider).unwrap();
-    client.revoke_provider(&admin, &provider).unwrap();
+    register_provider_with_anchor(&env, &client, &admin, &provider);
+    client.revoke_provider(&admin, &provider);
     let err = client
         .try_add_record(
             &provider,

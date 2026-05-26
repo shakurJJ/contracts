@@ -1,3 +1,4 @@
+#![no_std]
 #![allow(deprecated)]
 #![allow(non_snake_case)]
 

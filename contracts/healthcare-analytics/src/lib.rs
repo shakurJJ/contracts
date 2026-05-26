@@ -126,8 +126,9 @@ impl HealthcareAnalytics {
             // Attach evidence: current resource usage
             let cpu_used: u64 = env.storage().instance().get(&ResourceKey::TotalCpuUsed).unwrap_or(0);
             let memory_used: u64 = env.storage().instance().get(&ResourceKey::TotalMemoryUsed).unwrap_or(0);
-            let evidence_str = String::from_str(&env, "Current resource usage snapshot");
-            let hash = env.crypto().sha256(evidence_str.as_bytes());
+            let hash: Bytes = env.crypto().sha256(
+                &Bytes::from_slice(&env, b"current_resource_usage_snapshot")
+            ).into();
             let _ = attach_evidence(&env, incident_id, EvidenceType::StateSnapshot, hash, requester.clone());
             return Err(Error::JobThrottled);
         }
@@ -139,10 +140,10 @@ impl HealthcareAnalytics {
         };
 
         // Create the job via shared module
-        let job_id = create_report_job(&env, report_type.clone(), priority, requester, quota);
+        let job_id = create_report_job(&env, report_type.clone(), priority, requester.clone(), quota);
 
         env.events().publish(
-            (symbol_short!("report_job"), requester),
+            (symbol_short!("rep_job"), requester),
             (report_type, job_id),
         );
 
@@ -180,8 +181,9 @@ impl HealthcareAnalytics {
                 String::from_str(&env, "Job exceeded resource quota"),
                 job.requested_by.clone(),
             );
-            let evidence_str = String::from_str(&env, "Resource usage exceeded estimated quota");
-            let hash = env.crypto().sha256(evidence_str.as_bytes());
+            let hash: Bytes = env.crypto().sha256(
+                &Bytes::from_slice(&env, b"resource_usage_exceeded_quota")
+            ).into();
             let _ = attach_evidence(&env, incident_id, EvidenceType::ContextData, hash, job.requested_by);
         }
 
@@ -207,7 +209,7 @@ impl HealthcareAnalytics {
             .unwrap_or(Vec::new(&env));
         let mut new_running = Vec::new(&env);
         for i in 0..running.len() {
-            if let Ok(id) = running.get(i) {
+            if let Some(id) = running.get(i) {
                 if id != job_id {
                     new_running.push_back(id);
                 }
@@ -226,7 +228,9 @@ impl HealthcareAnalytics {
             String::from_str(&env, "Report job failed"),
             requester.clone(),
         );
-        let hash = env.crypto().sha256(error_message.as_bytes());
+        let hash: Bytes = env.crypto().sha256(
+            &Bytes::from_slice(&env, b"report_job_error_log")
+        ).into();
         let _ = attach_evidence(&env, incident_id, EvidenceType::ErrorLog, hash, requester);
 
         env.events()

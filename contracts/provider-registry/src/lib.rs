@@ -134,7 +134,7 @@ impl ProviderRegistry {
     }
 
     fn is_provider_active(env: &Env, provider: &Address) -> bool {
-        if let Some(profile) = env.storage().persistent().get(&DataKey::Provider(provider.clone())) {
+        if let Some(profile) = env.storage().persistent().get::<DataKey, ProviderProfile>(&DataKey::Provider(provider.clone())) {
             profile.active && profile.credential.revoked_at.is_none() && profile.credential.expires_at > env.ledger().timestamp()
         } else {
             false

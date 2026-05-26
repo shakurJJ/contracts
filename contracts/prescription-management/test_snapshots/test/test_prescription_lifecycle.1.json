@@ -73,6 +73,14 @@
                     },
                     {
                       "key": {
+                        "symbol": "pharmacy_id"
+                      },
+                      "val": {
+                        "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "quantity"
                       },
                       "val": {
@@ -128,16 +136,51 @@
               "function_name": "dispense_prescription",
               "args": [
                 {
-                  "u64": "0"
+                  "map": [
+                    {
+                      "key": {
+                        "symbol": "expires_at"
+                      },
+                      "val": {
+                        "u64": "2000"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "lot"
+                      },
+                      "val": {
+                        "string": "LOT123"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "ndc_code"
+                      },
+                      "val": {
+                        "string": "0501-1234-01"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "prescription_id"
+                      },
+                      "val": {
+                        "u64": "0"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "quantity"
+                      },
+                      "val": {
+                        "u32": 10
+                      }
+                    }
+                  ]
                 },
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
-                },
-                {
-                  "u32": 30
-                },
-                {
-                  "string": "LOT123"
                 }
               ]
             }
@@ -156,13 +199,43 @@
               "function_name": "transfer_prescription",
               "args": [
                 {
-                  "u64": "0"
+                  "map": [
+                    {
+                      "key": {
+                        "symbol": "prescription_id"
+                      },
+                      "val": {
+                        "u64": "0"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "to_pharmacy"
+                      },
+                      "val": {
+                        "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "transfer_reason"
+                      },
+                      "val": {
+                        "string": "patient_request"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "urgency"
+                      },
+                      "val": {
+                        "symbol": "routine"
+                      }
+                    }
+                  ]
                 },
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
-                },
-                {
-                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
                 }
               ]
             }
@@ -223,6 +296,30 @@
                     },
                     {
                       "key": {
+                        "symbol": "issued_at"
+                      },
+                      "val": {
+                        "u64": "0"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "issuing_pharmacy"
+                      },
+                      "val": {
+                        "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "last_dispensed"
+                      },
+                      "val": {
+                        "u64": "0"
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "medication_name"
                       },
                       "val": {
@@ -255,11 +352,41 @@
                     },
                     {
                       "key": {
+                        "symbol": "quantity_dispensed"
+                      },
+                      "val": {
+                        "u32": 10
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "refills_allowed"
+                      },
+                      "val": {
+                        "u32": 2
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "refills_remaining"
                       },
                       "val": {
                         "u32": 2
                       }
+                    },
+                    {
+                      "key": {
+                        "symbol": "refills_used"
+                      },
+                      "val": {
+                        "u32": 0
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "schedule"
+                      },
+                      "val": "void"
                     },
                     {
                       "key": {
@@ -269,6 +396,67 @@
                         "vec": [
                           {
                             "symbol": "Transferred"
+                          }
+                        ]
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "transfer_count"
+                      },
+                      "val": {
+                        "u32": 1
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "transfer_history"
+                      },
+                      "val": {
+                        "vec": [
+                          {
+                            "map": [
+                              {
+                                "key": {
+                                  "symbol": "from_pharmacy"
+                                },
+                                "val": {
+                                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
+                                }
+                              },
+                              {
+                                "key": {
+                                  "symbol": "to_pharmacy"
+                                },
+                                "val": {
+                                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
+                                }
+                              },
+                              {
+                                "key": {
+                                  "symbol": "transfer_reason"
+                                },
+                                "val": {
+                                  "string": "patient_request"
+                                }
+                              },
+                              {
+                                "key": {
+                                  "symbol": "transferred_at"
+                                },
+                                "val": {
+                                  "u64": "0"
+                                }
+                              },
+                              {
+                                "key": {
+                                  "symbol": "transferred_by"
+                                },
+                                "val": {
+                                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
+                                }
+                              }
+                            ]
                           }
                         ]
                       }
@@ -453,5 +641,39 @@
       ]
     ]
   },
-  "events": []
+  "events": [
+    {
+      "event": {
+        "ext": "v0",
+        "contract_id": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+        "type_": "contract",
+        "body": {
+          "v0": {
+            "topics": [
+              {
+                "symbol": "prescription_transferred"
+              }
+            ],
+            "data": {
+              "vec": [
+                {
+                  "u64": "0"
+                },
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
+                },
+                {
+                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
+                },
+                {
+                  "string": "patient_request"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "failed_call": false
+    }
+  ]
 }

@@ -1,8 +1,8 @@
 #![no_std]
 
 use soroban_sdk::{
-    contract, contracterror, contractevent, contractimpl, symbol_short, Address, Env, String,
-    Symbol, Vec, Bytes,
+    contract, contracterror, contractevent, contractimpl, symbol_short, Address, Bytes, Env,
+    String, Symbol, Vec,
 };
 use shared::{events::EVENT_VERSION, temporal, incident_tracking};
 
@@ -193,11 +193,14 @@ impl AllergyManagement {
     ) -> Result<u64, Error> {
         reporter.require_auth();
 
-        let severity = match severity_level.to_string().as_str() {
-            "critical" => incident_tracking::IncidentSeverity::Critical,
-            "high" => incident_tracking::IncidentSeverity::High,
-            "medium" => incident_tracking::IncidentSeverity::Medium,
-            _ => incident_tracking::IncidentSeverity::Low,
+        let severity = if severity_level == symbol_short!("critical") {
+            incident_tracking::IncidentSeverity::Critical
+        } else if severity_level == symbol_short!("high") {
+            incident_tracking::IncidentSeverity::High
+        } else if severity_level == symbol_short!("medium") {
+            incident_tracking::IncidentSeverity::Medium
+        } else {
+            incident_tracking::IncidentSeverity::Low
         };
 
         let incident_id = incident_tracking::capture_incident(
@@ -237,12 +240,16 @@ impl AllergyManagement {
     ) -> Result<u32, Error> {
         recorder.require_auth();
 
-        let evidence_kind = match evidence_type.to_string().as_str() {
-            "state_snapshot" => incident_tracking::EvidenceType::StateSnapshot,
-            "stack_trace" => incident_tracking::EvidenceType::StackTrace,
-            "context" => incident_tracking::EvidenceType::ContextData,
-            "validation_failure" => incident_tracking::EvidenceType::ValidationFailure,
-            _ => incident_tracking::EvidenceType::ErrorLog,
+        let evidence_kind = if evidence_type == Symbol::new(&env, "state_snapshot") {
+            incident_tracking::EvidenceType::StateSnapshot
+        } else if evidence_type == Symbol::new(&env, "stack_trace") {
+            incident_tracking::EvidenceType::StackTrace
+        } else if evidence_type == Symbol::new(&env, "context") {
+            incident_tracking::EvidenceType::ContextData
+        } else if evidence_type == Symbol::new(&env, "validation_failure") {
+            incident_tracking::EvidenceType::ValidationFailure
+        } else {
+            incident_tracking::EvidenceType::ErrorLog
         };
 
         incident_tracking::attach_evidence(&env, incident_id, evidence_kind, evidence_hash, recorder)
@@ -267,7 +274,6 @@ impl AllergyManagement {
         incident_tracking::resolve_incident(&env, incident_id, resolution_note)
             .map_err(|_| Error::AccessDenied)
     }
-}
 
     /// Update the severity of an existing allergy
     pub fn update_allergy_severity(

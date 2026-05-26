@@ -1,6 +1,7 @@
 #[cfg(test)]
 mod tests {
     use crate::{
+        safe_increment, safe_increment_ns, safe_increment_persistent, safe_increment_persistent_ns,
         AppointmentScheduling, AppointmentSchedulingClient, AppointmentStatus, DataKey, Error,
         HealthcareRegistry, HealthcareRegistryClient,
     };

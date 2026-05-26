@@ -2,8 +2,8 @@
 #![allow(deprecated)]
 
 use soroban_sdk::{
-    contract, contracterror, contractimpl, contracttype, symbol_short, Address, Bytes, Env, Symbol,
-    Vec,
+    contract, contracterror, contractimpl, contracttype, symbol_short, xdr::ToXdr, Address, Bytes,
+    BytesN, Env, Symbol, Vec,
 };
 
 mod test;
@@ -68,6 +68,11 @@ pub struct Proposal {
     pub abstentions: Vec<Address>,
     pub proposed_at: u64,
     pub status: ProposalStatus,
+    /// Eligible signer set snapshotted at proposal time.
+    pub eligible_signers: Vec<Address>,
+    /// Domain tag for replay protection.
+    pub domain_tag: BytesN<32>,
+}
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -129,7 +134,7 @@ impl MultisigGovernance {
 
         let key = DataKey::Proposal(action_id.clone());
         if env.storage().persistent().has(&key) {
-            return Err(Error::ProposalAlreadyExecuted);
+            return Err(Error::ProposalExists);
         }
 
         // Snapshot the eligible signer set at proposal time (#232).
@@ -179,7 +184,7 @@ impl MultisigGovernance {
             .ok_or(Error::ProposalNotFound)?;
 
         if proposal.status == ProposalStatus::Executed {
-            return Err(Error::ProposalAlreadyExecuted);
+            return Err(Error::AlreadyExecuted);
         }
 
         let ttl: u64 = env
@@ -189,15 +194,26 @@ impl MultisigGovernance {
             .ok_or(Error::NotInitialized)?;
 
         if env.ledger().timestamp() > proposal.proposed_at + ttl {
-            return Err(Error::ProposalExpired);
+            return Err(Error::Expired);
         }
 
         // Reject duplicate approvals from the same signer.
         for i in 0..proposal.approvals.len() {
-            if proposal.approvals.get(i).ok_or(Error::Unauthorized)? == signer {
-                return Err(Error::AlreadyApproved);
+            if proposal.approvals.get(i).ok_or(Error::NotASigner)? == signer {
+                return Err(Error::AlreadyVoted);
             }
         }
+
+        proposal.approvals.push_back(signer.clone());
+
+        Self::try_finalize(&env, &mut proposal)?;
+
+        env.storage().persistent().set(&key, &proposal);
+
+        env.events()
+            .publish((symbol_short!("approved"), action_id), signer);
+        Ok(())
+    }
 
     pub fn get_proposal(env: Env, action_id: Symbol) -> Result<Proposal, Error> {
         env.storage()
@@ -384,7 +400,15 @@ impl MultisigGovernance {
             .get(&DataKey::Threshold)
             .ok_or(Error::NotInitialized)?;
 
-        // Execute when threshold approvals are reached and quorum is satisfied.
+        let quorum_min: u32 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::QuorumMin)
+            .unwrap_or(0);
+
+        let approvals = proposal.approvals.len();
+        let participation = proposal.approvals.len() + proposal.abstentions.len();
+
         if approvals >= threshold {
             if participation < quorum_min {
                 return Err(Error::QuorumNotMet);
@@ -395,12 +419,16 @@ impl MultisigGovernance {
         Ok(())
     }
 
-    /// Read a proposal by action_id.
-    pub fn get_proposal(env: Env, action_id: Symbol) -> Result<Proposal, Error> {
-        env.storage()
-            .persistent()
-            .get(&DataKey::Proposal(action_id))
-            .ok_or(Error::ProposalNotFound)
+    fn assert_initialized(env: &Env) -> Result<(), Error> {
+        if !env.storage().persistent().has(&DataKey::Signers) {
+            return Err(Error::NotInitialized);
+        }
+        Ok(())
+    }
+
+    fn compute_domain_tag(env: &Env, action_id: &Symbol) -> BytesN<32> {
+        let data: Bytes = action_id.clone().to_xdr(env);
+        env.crypto().sha256(&data).into()
     }
 
     fn assert_not_initialized(env: &Env) -> Result<(), Error> {
@@ -417,10 +445,10 @@ impl MultisigGovernance {
             .get(&DataKey::Signers)
             .ok_or(Error::NotInitialized)?;
         for i in 0..signers.len() {
-            if signers.get(i).ok_or(Error::Unauthorized)? == *caller {
+            if signers.get(i).ok_or(Error::NotASigner)? == *caller {
                 return Ok(());
             }
         }
-        Err(Error::Unauthorized)
+        Err(Error::NotASigner)
     }
 }

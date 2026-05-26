@@ -189,7 +189,8 @@ impl ClinicalTrialContract {
         env: Env,
         trial_record_id: u64,
         patient_id: Address,
-        _patient_data_hash: BytesN<32>,
+        patient_data_hash: BytesN<32>,
+        claim_evidence: Vec<EligibilityClaimEvidence>,
     ) -> Result<EligibilityResult, Error> {
         patient_id.require_auth();
 
@@ -704,10 +705,7 @@ impl ClinicalTrialContract {
         payload.append(&Bytes::from_slice(env, b"trial-eligibility-v1"));
         payload.append(&Bytes::from_slice(env, &trial_record_id.to_be_bytes()));
         payload.append(&patient_data_hash.clone().into());
-        payload.append(&rule.criteria_type.to_string().into());
-        payload.append(&rule.parameter.to_xdr(env));
-        payload.append(&rule.operator.to_string().into());
-        payload.append(&rule.value.to_xdr(env));
+        payload.append(&Bytes::from_slice(env, &rule.mandatory.then(|| 1u8).unwrap_or(0u8).to_be_bytes()));
         env.crypto().sha256(&payload).into()
     }
 }

@@ -193,7 +193,7 @@ impl ZkEligibility {
         }
 
         // ── Nullifier check ───────────────────────────────────────────────────
-        let proof_hash = env.crypto().sha256(&bundle.proof);
+        let proof_hash: BytesN<32> = env.crypto().sha256(&bundle.proof).into();
         let nullifier_key = DataKey::Nullifier(proof_hash.clone());
         if env.storage().persistent().has(&nullifier_key) {
             return Err(Error::ProofAlreadyUsed);

@@ -33,6 +33,31 @@ pub enum ContractError {
     ConsentRevoked = 17,
     ConsentDenied = 18,
     InvalidScopeMask = 19,
+    InsufficientRole = 20,
+    RoleAlreadyGranted = 21,
+    RoleNotFound = 22,
+}
+
+/// --------------------
+/// Role Types (RBAC)
+/// --------------------
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Role {
+    Admin,
+    Doctor,
+    Nurse,
+    Patient,
+    Insurer,
+    Auditor,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RoleAssignment {
+    pub granted_by: Address,
+    pub granted_at: u64,
+    pub expires_at: u64,
 }
 
 /// --------------------
@@ -149,6 +174,8 @@ pub enum DataKey {
     Consent(Address, Address, String),
     // subject -> Vec<(grantee, purpose_code)> for enumeration
     SubjectConsents(Address),
+    // RBAC: (address, role) -> RoleAssignment
+    RoleAssignment(Address, Role),
 }
 
 #[contract]

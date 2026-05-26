@@ -73,6 +73,14 @@
                     },
                     {
                       "key": {
+                        "symbol": "pharmacy_id"
+                      },
+                      "val": {
+                        "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "quantity"
                       },
                       "val": {
@@ -157,7 +165,9 @@
                       "key": {
                         "symbol": "current_pharmacy"
                       },
-                      "val": "void"
+                      "val": {
+                        "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
+                      }
                     },
                     {
                       "key": {
@@ -166,6 +176,28 @@
                       "val": {
                         "bool": false
                       }
+                    },
+                    {
+                      "key": {
+                        "symbol": "issued_at"
+                      },
+                      "val": {
+                        "u64": "0"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "issuing_pharmacy"
+                      },
+                      "val": {
+                        "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "last_dispensed"
+                      },
+                      "val": "void"
                     },
                     {
                       "key": {
@@ -201,6 +233,22 @@
                     },
                     {
                       "key": {
+                        "symbol": "quantity_dispensed"
+                      },
+                      "val": {
+                        "u32": 0
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "refills_allowed"
+                      },
+                      "val": {
+                        "u32": 0
+                      }
+                    },
+                    {
+                      "key": {
                         "symbol": "refills_remaining"
                       },
                       "val": {
@@ -209,14 +257,44 @@
                     },
                     {
                       "key": {
+                        "symbol": "refills_used"
+                      },
+                      "val": {
+                        "u32": 0
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "schedule"
+                      },
+                      "val": "void"
+                    },
+                    {
+                      "key": {
                         "symbol": "status"
                       },
                       "val": {
                         "vec": [
                           {
-                            "symbol": "Active"
+                            "symbol": "Issued"
                           }
                         ]
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "transfer_count"
+                      },
+                      "val": {
+                        "u32": 0
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "transfer_history"
+                      },
+                      "val": {
+                        "vec": []
                       }
                     },
                     {

@@ -36,6 +36,10 @@ pub enum Error {
     InvalidReleaseMetadata = 13,
     /// Release metadata hash is not in the approved artifact registry.
     UnapprovedArtifactMetadata = 14,
+    ProposalExists     = 15,
+    AlreadySigner      = 16,
+    ThresholdBreached  = 17,
+    AlreadyFinalized   = 18,
 }
 
 // ── Storage keys ──────────────────────────────────────────────────────────────
@@ -48,6 +52,31 @@ pub enum DataKey {
     NextId,
     Proposal(u64),
     ApprovedArtifactMetadata(BytesN<32>),
+    SignerProposal,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum SignerChangeKind {
+    Add,
+    Remove,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum SignerProposalStatus {
+    Pending,
+    Executed,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SignerProposal {
+    pub kind: SignerChangeKind,
+    pub target: Address,
+    pub approvals: Vec<Address>,
+    pub proposed_at: u64,
+    pub status: SignerProposalStatus,
 }
 
 // ── Types ─────────────────────────────────────────────────────────────────────

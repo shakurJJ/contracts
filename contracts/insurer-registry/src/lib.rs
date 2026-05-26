@@ -2,7 +2,8 @@
 #![allow(deprecated)]
 
 use soroban_sdk::{
-    contract, contracterror, contractimpl, contracttype, symbol_short, Address, Env, String, Vec,
+    contract, contracterror, contractimpl, contracttype, symbol_short, Address, BytesN, Env,
+    String, Vec,
 };
 
 /// --------------------
@@ -18,6 +19,17 @@ pub enum Error {
     ReviewerNotFound = 4,
     NoReviewersFound = 5,
     NotAuthorized = 6,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct InsurerData {
+    pub name: String,
+    pub license_id: String,
+    pub contact_details: String,
+    pub coverage_policies: String,
+    pub metadata: String,
+    pub credential: CredentialAnchor,
 }
 
 #[contracttype]
@@ -197,11 +209,25 @@ impl InsurerRegistry {
     }
 
     pub fn is_insurer_active(env: Env, wallet: Address) -> bool {
+        let now = env.ledger().timestamp();
         if let Ok(insurer) = Self::get_insurer(env, wallet) {
-            insurer.credential.revoked_at.is_none() && insurer.credential.expires_at > env.ledger().timestamp()
+            insurer.credential.revoked_at.is_none() && insurer.credential.expires_at > now
         } else {
             false
         }
+    }
+
+    fn assert_active_insurer(env: &Env, wallet: &Address) -> Result<(), Error> {
+        let key = DataKey::Insurer(wallet.clone());
+        let insurer: InsurerData = env
+            .storage()
+            .persistent()
+            .get(&key)
+            .ok_or(Error::InsurerNotFound)?;
+        if insurer.credential.revoked_at.is_some() {
+            return Err(Error::InsurerNotFound);
+        }
+        Ok(())
     }
 
     // =====================================================
@@ -298,6 +324,7 @@ impl InsurerRegistry {
     }
 
     pub fn get_claims_reviewers(env: Env, insurer_wallet: Address) -> Vec<Address> {
+        let reviewers_key = DataKey::ClaimsReviewers(insurer_wallet);
         env.storage()
             .persistent()
             .get(&reviewers_key)
