@@ -1484,7 +1484,7 @@ impl MedicalRegistry {
             .storage()
             .persistent()
             .get(&record_key)
-            .ok_or(ContractError::InvalidCID)?;
+            .ok_or(ContractError::NotFound)?;
         require_record_access(&env, &record_data.patient, &caller)?;
 
         // TTL bump

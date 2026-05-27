@@ -1944,6 +1944,16 @@ fn test_get_records_by_type_returns_matching_records() {
 }
 
 #[test]
+fn test_get_record_history_missing_record_returns_not_found() {
+    let env = Env::default();
+    let (client, patient, _doctor) = setup_for_filter(&env);
+
+    let result = client.try_get_record_history(&999, &patient);
+
+    assert_eq!(result, Err(Ok(ContractError::NotFound)));
+}
+
+#[test]
 fn test_get_records_by_type_ttl_refreshes_records() {
     let env = Env::default();
     env.ledger().set(make_ledger_info(100, 1_000_000));
