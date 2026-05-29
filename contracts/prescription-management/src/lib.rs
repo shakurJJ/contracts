@@ -35,8 +35,8 @@ pub enum Error {
     ProposalAlreadyFinalized = 20,
     /// valid_until must be in the future and within MAX_VALIDITY_WINDOW_SECS of issue time
     InvalidValidityWindow = 21,
-    /// transfer_history has reached MAX_TRANSFER_HISTORY entries
-    TransferHistoryFull = 22,
+    /// Timestamp arithmetic would overflow u64
+    TimestampOverflow = 22,
 }
 
 #[contracttype]
