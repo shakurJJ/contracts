@@ -52,6 +52,22 @@ pub struct LabManagementContract;
 
 #[contractimpl]
 impl LabManagementContract {
+    /// Validates QC check results before any state mutations occur
+    /// Returns Ok if validation passes, Err if validation fails
+    fn validate_qc_results(qc_passed: bool, results_summary: &Vec<TestResult>) -> Result<(), Error> {
+        // Check QC status
+        if !qc_passed {
+            return Err(Error::QCFieldFailed);
+        }
+
+        // Check results are not empty
+        if results_summary.is_empty() {
+            return Err(Error::NotFound);
+        }
+
+        Ok(())
+    }
+
     pub fn order_lab_test(
         env: Env,
         provider_id: Address,
@@ -101,21 +117,30 @@ impl LabManagementContract {
         qc_passed: bool,
     ) {
         lab_id.require_auth();
+
+        // VALIDATION PHASE: All validations must pass before any storage writes
+        // This ensures no partial state mutations on failure
+
+        // 1. Verify order exists
         let mut order: LabOrder = env
             .storage()
             .persistent()
             .get(&order_id)
             .unwrap_or_else(|| panic_with_error!(&env, Error::NotFound));
 
-        if !qc_passed {
-            panic_with_error!(&env, Error::QCFieldFailed);
-        }
+        // 2. Perform QC validation (BEFORE any mutations)
+        // All checks must pass before proceeding to mutation phase
+        Self::validate_qc_results(qc_passed, &results_summary)
+            .unwrap_or_else(|e| panic_with_error!(&env, e));
+
+        // MUTATION PHASE: All state changes after validations have passed
+        // Only reached if all validations succeeded
 
         order.results_hash = Some(results_hash);
         order.quality_control_passed = qc_passed;
         order.status = Symbol::new(&env, "Completed");
 
-        // Event for result submission (LOINC support)
+        // Publish event before final storage write
         env.events().publish(
             (
                 Symbol::new(&env, "LAB"),
@@ -125,6 +150,7 @@ impl LabManagementContract {
             results_summary,
         );
 
+        // Final transactional write (only reached if all validations passed)
         env.storage().persistent().set(&order_id, &order);
     }
 
