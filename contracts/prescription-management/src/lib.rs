@@ -330,8 +330,12 @@ impl PrescriptionContract {
             return Err(Error::InvalidStatusTransition);
         }
 
-        // Check expiration
-        if env.ledger().timestamp() > p.valid_until {
+        // Check expiration.
+        // Semantics: valid_until is an EXCLUSIVE upper bound — a prescription
+        // is considered expired when ledger timestamp >= valid_until.
+        // This ensures consistent behaviour at UTC midnight boundaries
+        // regardless of sub-second ledger close timing.
+        if env.ledger().timestamp() >= p.valid_until {
             return Err(Error::Expired);
         }
 
@@ -418,8 +422,12 @@ impl PrescriptionContract {
             return Err(Error::InvalidStatusTransition);
         }
 
-        // Check expiration
-        if env.ledger().timestamp() > p.valid_until {
+        // Check expiration.
+        // Semantics: valid_until is an EXCLUSIVE upper bound — a prescription
+        // is considered expired when ledger timestamp >= valid_until.
+        // This ensures consistent behaviour at UTC midnight boundaries
+        // regardless of sub-second ledger close timing.
+        if env.ledger().timestamp() >= p.valid_until {
             return Err(Error::Expired);
         }
 
@@ -995,8 +1003,12 @@ impl PrescriptionContract {
             return Err(Error::InvalidStatusTransition);
         }
 
-        // Check expiration
-        if env.ledger().timestamp() > p.valid_until {
+        // Check expiration.
+        // Semantics: valid_until is an EXCLUSIVE upper bound — a prescription
+        // is considered expired when ledger timestamp >= valid_until.
+        // This ensures consistent behaviour at UTC midnight boundaries
+        // regardless of sub-second ledger close timing.
+        if env.ledger().timestamp() >= p.valid_until {
             return Err(Error::Expired);
         }
 
