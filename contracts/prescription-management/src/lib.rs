@@ -6,6 +6,27 @@ use soroban_sdk::{
 };
 use shared::temporal;
 
+// ── Allergy-management client ─────────────────────────────────────────────────
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AllergyInteraction {
+    pub allergy_id: u64,
+    pub allergen: String,
+    pub severity: Symbol,
+    pub reaction_type: Vec<String>,
+    pub interaction_type: Symbol,
+}
+
+#[contractclient(name = "AllergyManagementClient")]
+pub trait AllergyManagementInterface {
+    fn check_drug_allergy_interaction(
+        env: Env,
+        patient_id: Address,
+        drug_name: String,
+    ) -> Vec<AllergyInteraction>;
+}
+
 // ── Provider-registry client ──────────────────────────────────────────────────
 
 #[contractclient(name = "ProviderRegistryClient")]
@@ -49,6 +70,10 @@ pub enum Error {
     ProviderNotRegistered = 23,
     /// Transfer history has reached the maximum allowed entries
     TransferHistoryFull = 24,
+    /// Allergy interaction detected and strict mode is enabled
+    AllergyInteractionDetected = 25,
+    /// bypass_allergy_check requires admin role
+    AllergyBypassRequiresAdmin = 26,
     /// Prescription has already been dispensed or transferred, cannot be recalled
     CannotRecallDispensed = 25,
     /// Recall reason is required for documentation
@@ -147,9 +172,12 @@ pub enum DataKey {
     CatalogSnapshot(u64),
     /// Address of the provider-registry contract used for cross-contract verification.
     ProviderRegistry,
-    RecallCounter,
-    RecallRecord(u64),
-    PrescriptionRecall(u64),
+    /// Address of the allergy-management contract for cross-contract allergy checks.
+    AllergyRegistry,
+    /// Admin address for elevated operations (e.g. allergy bypass).
+    Admin,
+    /// If true, allergy interactions block prescription issuance; if false, only alert.
+    AllergyStrictMode,
 }
 
 #[contracttype]
@@ -214,6 +242,8 @@ pub struct IssueRequest {
     pub valid_until: u64,
     pub substitution_allowed: bool,
     pub pharmacy_id: Option<Address>,
+    /// When true, skip allergy check. Requires caller to be the configured admin.
+    pub bypass_allergy_check: bool,
 }
 
 #[contracttype]
@@ -261,6 +291,27 @@ impl PrescriptionContract {
         Ok(())
     }
 
+    /// Configure the allergy-management contract and admin for allergy checks.
+    /// `strict_mode`: if true, detected interactions block issuance; if false, only emit alert.
+    pub fn configure_allergy_check(
+        env: Env,
+        admin: Address,
+        allergy_registry: Address,
+        strict_mode: bool,
+    ) -> Result<(), Error> {
+        admin.require_auth();
+        env.storage()
+            .persistent()
+            .set(&DataKey::AllergyRegistry, &allergy_registry);
+        env.storage()
+            .persistent()
+            .set(&DataKey::Admin, &admin);
+        env.storage()
+            .persistent()
+            .set(&DataKey::AllergyStrictMode, &strict_mode);
+        Ok(())
+    }
+
     pub fn issue_prescription(
         env: Env,
         provider_id: Address,
@@ -278,6 +329,46 @@ impl PrescriptionContract {
             let client = ProviderRegistryClient::new(&env, &registry_addr);
             if !client.is_provider(&provider_id) {
                 return Err(Error::ProviderNotRegistered);
+            }
+        }
+
+        // Allergy cross-check against allergy-management contract.
+        if req.bypass_allergy_check {
+            // Bypass requires admin role.
+            let admin: Option<Address> = env.storage().persistent().get(&DataKey::Admin);
+            match admin {
+                Some(ref a) if *a == provider_id => {}
+                _ => return Err(Error::AllergyBypassRequiresAdmin),
+            }
+        } else if let Some(allergy_addr) = env
+            .storage()
+            .persistent()
+            .get::<_, Address>(&DataKey::AllergyRegistry)
+        {
+            let allergy_client = AllergyManagementClient::new(&env, &allergy_addr);
+            let interactions =
+                allergy_client.check_drug_allergy_interaction(&patient_id, &req.medication_name);
+            if !interactions.is_empty() {
+                // Emit alert for every detected interaction.
+                for interaction in interactions.iter() {
+                    env.events().publish(
+                        (Symbol::new(&env, "allergy_interaction_alert"),),
+                        (
+                            patient_id.clone(),
+                            req.medication_name.clone(),
+                            interaction.allergen.clone(),
+                            interaction.severity.clone(),
+                        ),
+                    );
+                }
+                let strict: bool = env
+                    .storage()
+                    .persistent()
+                    .get(&DataKey::AllergyStrictMode)
+                    .unwrap_or(false);
+                if strict {
+                    return Err(Error::AllergyInteractionDetected);
+                }
             }
         }
 
