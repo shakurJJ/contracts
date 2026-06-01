@@ -665,7 +665,7 @@ fn test_time_series_support() {
 }
 
 // ========================
-// Resource quota enforcement tests
+// Degradation policy tests
 // ========================
 
 fn setup_with_admin() -> (Env, HealthcareAnalyticsClient<'static>, Address) {
@@ -679,55 +679,102 @@ fn setup_with_admin() -> (Env, HealthcareAnalyticsClient<'static>, Address) {
 }
 
 #[test]
-fn test_request_report_within_quota_accepted() {
-    let (env, client, admin) = setup_with_admin();
+fn test_request_report_full_quality_when_not_throttled() {
+    let (env, client, _admin) = setup_with_admin();
     let requester = Address::generate(&env);
 
-    // Set a modest budget: 1_000 CPU, 1_000 memory, throttle at 80%
-    client.set_resource_limits(&admin, &1_000, &1_000, &5, &80);
+    let accepted = client
+        .request_report(
+            &requester,
+            &String::from_str(&env, "quality_metrics"),
+            &shared::resource_management::JobPriority::Normal,
+            &500_000,
+            &50_000,
+            &DegradationPolicy::Fail,
+        )
+        .unwrap();
 
-    // Request a job well within budget (100 CPU, 100 memory)
-    let job_id = client.request_report(
-        &requester,
-        &String::from_str(&env, "quality_metrics"),
-        &JobPriority::Normal,
-        &100,
-        &100,
+    assert_eq!(accepted.result_quality, ResultQuality::Full);
+    assert_eq!(
+        client.get_job_result_quality(&accepted.job_id),
+        ResultQuality::Full
     );
-    assert!(job_id > 0);
 }
 
 #[test]
-fn test_request_report_throttled_when_cpu_budget_exceeded() {
+fn test_request_report_fail_policy_when_throttled() {
     let (env, client, admin) = setup_with_admin();
     let requester = Address::generate(&env);
 
-    // Budget: 1_000 CPU, throttle at 80% → throttles when TotalCpuUsed > 800
-    client.set_resource_limits(&admin, &1_000, &1_000_000, &5, &80);
+    // throttle_threshold = 0 means always throttled
+    client
+        .set_resource_limits(&admin, &1, &1, &1, &0)
+        .unwrap();
 
-    // Submit and complete a job that consumes 900 CPU (above the 80% threshold)
-    let job_id = client.request_report(
+    let result = client.request_report(
         &requester,
-        &String::from_str(&env, "adverse_event_report"),
-        &JobPriority::High,
-        &900,
-        &100,
+        &String::from_str(&env, "adverse_event"),
+        &shared::resource_management::JobPriority::Normal,
+        &1_000_000,
+        &100_000,
+        &DegradationPolicy::Fail,
     );
-    client.execute_next_report();
-    client.complete_report(&job_id, &900, &100);
 
-    // Next request must be throttled: TotalCpuUsed (900) > 80% of 1_000 (800)
-    let result = client.try_request_report(
-        &requester,
-        &String::from_str(&env, "quality_metrics"),
-        &JobPriority::Normal,
-        &10,
-        &10,
-    );
     assert_eq!(result, Err(Ok(Error::JobThrottled)));
 }
 
 #[test]
+fn test_request_report_approximate_policy_when_throttled() {
+    let (env, client, admin) = setup_with_admin();
+    let requester = Address::generate(&env);
+
+    client
+        .set_resource_limits(&admin, &1, &1, &1, &0)
+        .unwrap();
+
+    let accepted = client
+        .request_report(
+            &requester,
+            &String::from_str(&env, "quality_metrics"),
+            &shared::resource_management::JobPriority::Normal,
+            &1_000_000,
+            &100_000,
+            &DegradationPolicy::Approximate,
+        )
+        .unwrap();
+
+    assert_eq!(accepted.result_quality, ResultQuality::Truncated);
+    assert_eq!(
+        client.get_job_result_quality(&accepted.job_id),
+        ResultQuality::Truncated
+    );
+}
+
+#[test]
+fn test_request_report_sample_policy_when_throttled() {
+    let (env, client, admin) = setup_with_admin();
+    let requester = Address::generate(&env);
+
+    client
+        .set_resource_limits(&admin, &1, &1, &1, &0)
+        .unwrap();
+
+    let accepted = client
+        .request_report(
+            &requester,
+            &String::from_str(&env, "quality_metrics"),
+            &shared::resource_management::JobPriority::Normal,
+            &1_000_000,
+            &100_000,
+            &DegradationPolicy::Sample,
+        )
+        .unwrap();
+
+    assert_eq!(accepted.result_quality, ResultQuality::Sampled);
+    assert_eq!(
+        client.get_job_result_quality(&accepted.job_id),
+        ResultQuality::Sampled
+    );
 fn test_cpu_quota_accumulates_across_jobs() {
     let (env, client, admin) = setup_with_admin();
     let requester = Address::generate(&env);
