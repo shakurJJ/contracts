@@ -1,10 +1,18 @@
 #![no_std]
 #![allow(deprecated)]
 
+use shared::privacy::validate_nonzero_address;
 use soroban_sdk::{
     contract, contracterror, contractimpl, contracttype, symbol_short, Address, BytesN, Env,
     String, Vec,
 };
+
+/// Maximum number of departments a hospital configuration may contain.
+pub const MAX_DEPARTMENTS: u32 = 200;
+/// Maximum number of locations a hospital configuration may contain.
+pub const MAX_LOCATIONS: u32 = 50;
+/// Maximum number of equipment resources a hospital configuration may contain.
+pub const MAX_EQUIPMENT: u32 = 100;
 
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
@@ -17,6 +25,7 @@ pub enum ContractError {
     CredentialRevoked = 5,
     /// An empty vector was passed for a field that previously had values
     EmptyFieldUpdate = 6,
+    InvalidAddress = 7,
 }
 
 #[contracttype]
@@ -213,6 +222,8 @@ impl HospitalRegistry {
         expires_at: u64,
         revocation_reference: BytesN<32>,
     ) -> Result<(), ContractError> {
+        validate_nonzero_address(&wallet).map_err(|_| ContractError::InvalidAddress)?;
+        validate_nonzero_address(&issuer).map_err(|_| ContractError::InvalidAddress)?;
         wallet.require_auth();
         issuer.require_auth();
 
@@ -252,6 +263,7 @@ impl HospitalRegistry {
     }
 
     pub fn update_hospital(env: Env, wallet: Address, metadata: String) -> Result<(), ContractError> {
+        validate_nonzero_address(&wallet).map_err(|_| ContractError::InvalidAddress)?;
         wallet.require_auth();
 
         let mut hospital = Self::assert_active_hospital(&env, &wallet)?;
@@ -268,6 +280,7 @@ impl HospitalRegistry {
     }
 
     pub fn get_hospital(env: Env, wallet: Address) -> Result<HospitalData, ContractError> {
+        validate_nonzero_address(&wallet).map_err(|_| ContractError::InvalidAddress)?;
         Self::load_hospital(&env, &wallet)
     }
 
@@ -280,8 +293,19 @@ impl HospitalRegistry {
         wallet: Address,
         config: HospitalConfig,
     ) -> Result<(), ContractError> {
+        validate_nonzero_address(&wallet).map_err(|_| ContractError::InvalidAddress)?;
         wallet.require_auth();
         Self::assert_active_hospital(&env, &wallet)?;
+
+        if config.departments.len() > MAX_DEPARTMENTS {
+            return Err(ContractError::ConfigLimitExceeded);
+        }
+        if config.locations.len() > MAX_LOCATIONS {
+            return Err(ContractError::ConfigLimitExceeded);
+        }
+        if config.equipment.len() > MAX_EQUIPMENT {
+            return Err(ContractError::ConfigLimitExceeded);
+        }
 
         let old: HospitalConfig = env
             .storage()
@@ -298,6 +322,7 @@ impl HospitalRegistry {
     }
 
     pub fn get_hospital_config(env: Env, wallet: Address) -> Result<HospitalConfig, ContractError> {
+        validate_nonzero_address(&wallet).map_err(|_| ContractError::InvalidAddress)?;
         env.storage()
             .persistent()
             .get(&DataKey::HospitalConfig(wallet))
@@ -309,11 +334,15 @@ impl HospitalRegistry {
         wallet: Address,
         departments: Vec<Department>,
     ) -> Result<(), ContractError> {
+        validate_nonzero_address(&wallet).map_err(|_| ContractError::InvalidAddress)?;
         wallet.require_auth();
         Self::assert_active_hospital(&env, &wallet)?;
         let mut config = Self::get_hospital_config(env.clone(), wallet.clone())?;
         if departments.is_empty() && !config.departments.is_empty() {
             return Err(ContractError::EmptyFieldUpdate);
+        }
+        if departments.len() > MAX_DEPARTMENTS {
+            return Err(ContractError::ConfigLimitExceeded);
         }
         let old = config.clone();
         config.departments = departments;
@@ -329,11 +358,15 @@ impl HospitalRegistry {
         wallet: Address,
         locations: Vec<Location>,
     ) -> Result<(), ContractError> {
+        validate_nonzero_address(&wallet).map_err(|_| ContractError::InvalidAddress)?;
         wallet.require_auth();
         Self::assert_active_hospital(&env, &wallet)?;
         let mut config = Self::get_hospital_config(env.clone(), wallet.clone())?;
         if locations.is_empty() && !config.locations.is_empty() {
             return Err(ContractError::EmptyFieldUpdate);
+        }
+        if locations.len() > MAX_LOCATIONS {
+            return Err(ContractError::ConfigLimitExceeded);
         }
         let old = config.clone();
         config.locations = locations;
@@ -349,11 +382,15 @@ impl HospitalRegistry {
         wallet: Address,
         equipment: Vec<EquipmentResource>,
     ) -> Result<(), ContractError> {
+        validate_nonzero_address(&wallet).map_err(|_| ContractError::InvalidAddress)?;
         wallet.require_auth();
         Self::assert_active_hospital(&env, &wallet)?;
         let mut config = Self::get_hospital_config(env.clone(), wallet.clone())?;
         if equipment.is_empty() && !config.equipment.is_empty() {
             return Err(ContractError::EmptyFieldUpdate);
+        }
+        if equipment.len() > MAX_EQUIPMENT {
+            return Err(ContractError::ConfigLimitExceeded);
         }
         let old = config.clone();
         config.equipment = equipment;
@@ -369,6 +406,7 @@ impl HospitalRegistry {
         wallet: Address,
         policies: Vec<PolicyProcedure>,
     ) -> Result<(), ContractError> {
+        validate_nonzero_address(&wallet).map_err(|_| ContractError::InvalidAddress)?;
         wallet.require_auth();
         Self::assert_active_hospital(&env, &wallet)?;
         let mut config = Self::get_hospital_config(env.clone(), wallet.clone())?;
@@ -386,6 +424,7 @@ impl HospitalRegistry {
         wallet: Address,
         alerts: Vec<AlertSetting>,
     ) -> Result<(), ContractError> {
+        validate_nonzero_address(&wallet).map_err(|_| ContractError::InvalidAddress)?;
         wallet.require_auth();
         Self::assert_active_hospital(&env, &wallet)?;
         let mut config = Self::get_hospital_config(env.clone(), wallet.clone())?;
@@ -403,6 +442,7 @@ impl HospitalRegistry {
         wallet: Address,
         insurance_providers: Vec<InsuranceProviderConfig>,
     ) -> Result<(), ContractError> {
+        validate_nonzero_address(&wallet).map_err(|_| ContractError::InvalidAddress)?;
         wallet.require_auth();
         Self::assert_active_hospital(&env, &wallet)?;
         let mut config = Self::get_hospital_config(env.clone(), wallet.clone())?;
@@ -420,6 +460,7 @@ impl HospitalRegistry {
         wallet: Address,
         billing: BillingConfig,
     ) -> Result<(), ContractError> {
+        validate_nonzero_address(&wallet).map_err(|_| ContractError::InvalidAddress)?;
         wallet.require_auth();
         Self::assert_active_hospital(&env, &wallet)?;
         let mut config = Self::get_hospital_config(env.clone(), wallet.clone())?;
@@ -437,6 +478,7 @@ impl HospitalRegistry {
         wallet: Address,
         protocols: Vec<EmergencyProtocol>,
     ) -> Result<(), ContractError> {
+        validate_nonzero_address(&wallet).map_err(|_| ContractError::InvalidAddress)?;
         wallet.require_auth();
         Self::assert_active_hospital(&env, &wallet)?;
         let mut config = Self::get_hospital_config(env.clone(), wallet.clone())?;

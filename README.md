@@ -64,6 +64,17 @@ The system is organised as a Cargo workspace. Each contract lives in its own cra
 | `contracts/upgrade-governance` | Contract upgrade governance |
 | `contracts/zk-eligibility-verifier` | Zero-knowledge eligibility verification |
 
+## Architecture Decision Records
+
+Design rationale for key architectural and security decisions is documented in `docs/adr/`.
+
+- `docs/adr/ADR-001.md` — Why Soroban/Stellar vs other blockchain platforms
+- `docs/adr/ADR-002.md` — Storage TTL retention class design (Critical/Operational/Ephemeral)
+- `docs/adr/ADR-003.md` — Hash-based privacy for sensitive fields
+- `docs/adr/ADR-004.md` — Multi-sig governance threshold design
+- `docs/adr/ADR-005.md` — Actor verification caching strategy in shared module
+- `docs/adr/ADR-006.md` — Why no-std with WASM target
+
 ### Technology Stack
 
 - **Blockchain**: Stellar Network
@@ -175,6 +186,10 @@ soroban contract invoke \
   -- initialize \
   --admin <ADMIN_ADDRESS>
 ```
+
+## Upgrade Guide
+
+A step-by-step upgrade workflow is available in `docs/upgrade-guide.md`, including schema migration, multi-sig governance submission, rollback procedures, and testnet dry run examples.
 
 ## Usage
 
