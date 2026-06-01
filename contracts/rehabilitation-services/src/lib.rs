@@ -140,6 +140,29 @@ pub struct DischargeRecord {
     pub home_exercise_program_hash: BytesN<32>,
 }
 
+/// A measurable rehabilitation goal with a numeric target value.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MeasurableGoal {
+    pub goal_id: u64,
+    pub plan_id: u64,
+    pub goal_type: Symbol,
+    pub target_value: u32,
+    pub target_date: u64,
+    pub achieved: bool,
+    /// Snapshot of the plan's version count when this goal was set.
+    pub plan_version: u64,
+}
+
+/// A single progress measurement for a measurable goal.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ProgressEntry {
+    pub goal_id: u64,
+    pub current_value: u32,
+    pub measured_at: u64,
+}
+
 #[contracttype]
 pub enum DataKey {
     EvaluationCounter,
@@ -156,6 +179,12 @@ pub enum DataKey {
     Authorization(u64),
     ProgressNotes(u64),
     Discharge(u64),
+    /// Auto-increment counter for measurable goals.
+    GoalCounter,
+    /// goal_id -> MeasurableGoal
+    MeasurableGoal(u64),
+    /// goal_id -> Vec<ProgressEntry>
+    GoalProgressList(u64),
 }
 
 #[contracttype]
@@ -693,6 +722,173 @@ impl RehabilitationServicesContract {
             .instance()
             .get(&DataKey::BalanceMobilityAssessments(evaluation_id))
             .unwrap_or(Vec::new(&env))
+    }
+
+    // ── Goal tracking ──────────────────────────────────────────────────────────
+
+    /// Define a measurable outcome goal for an existing treatment plan.
+    ///
+    /// Returns the new `goal_id`. Goals are versioned against the plan snapshot
+    /// counter stored alongside each plan's treatment-plan counter.
+    ///
+    /// Supported `goal_type` symbols: `range_of_motion`, `pain_scale`, `fim`,
+    /// `strength`, `balance`, `endurance` (open-ended — any Symbol is accepted).
+    pub fn set_rehabilitation_goal(
+        env: Env,
+        plan_id: u64,
+        goal_type: Symbol,
+        target_value: u32,
+        target_date: u64,
+    ) -> Result<u64, Error> {
+        let plan: RehabTreatmentPlan = env
+            .storage()
+            .instance()
+            .get(&DataKey::TreatmentPlan(plan_id))
+            .ok_or(Error::NotFound)?;
+
+        plan.therapist_id.require_auth();
+
+        let goal_id = env
+            .storage()
+            .instance()
+            .get(&DataKey::GoalCounter)
+            .unwrap_or(0u64)
+            + 1;
+
+        // Version is the number of goals already set for this plan (monotonic).
+        let plan_version: u64 = {
+            let mut count = 0u64;
+            let max = goal_id;
+            // Count goals belonging to this plan (linear scan over goal ids up to current).
+            // Using the stored counter as the upper bound is correct because goal_id is
+            // globally monotonic and we haven't persisted this new goal yet.
+            for gid in 1..max {
+                if let Some(g) = env
+                    .storage()
+                    .instance()
+                    .get::<_, MeasurableGoal>(&DataKey::MeasurableGoal(gid))
+                {
+                    if g.plan_id == plan_id {
+                        count += 1;
+                    }
+                }
+            }
+            count
+        };
+
+        let goal = MeasurableGoal {
+            goal_id,
+            plan_id,
+            goal_type: goal_type.clone(),
+            target_value,
+            target_date,
+            achieved: false,
+            plan_version,
+        };
+
+        env.storage()
+            .instance()
+            .set(&DataKey::MeasurableGoal(goal_id), &goal);
+        env.storage()
+            .instance()
+            .set(&DataKey::GoalCounter, &goal_id);
+
+        env.events().publish(
+            (Symbol::new(&env, "goal_set"), plan_id),
+            (goal_id, goal_type, target_value, target_date),
+        );
+
+        Ok(goal_id)
+    }
+
+    /// Record a progress measurement for a measurable goal.
+    ///
+    /// Emits a `GoalAchieved` event when `current_value` reaches or exceeds
+    /// `target_value` for the first time.
+    pub fn record_progress(
+        env: Env,
+        plan_id: u64,
+        goal_id: u64,
+        current_value: u32,
+        measured_at: u64,
+    ) -> Result<(), Error> {
+        let plan: RehabTreatmentPlan = env
+            .storage()
+            .instance()
+            .get(&DataKey::TreatmentPlan(plan_id))
+            .ok_or(Error::NotFound)?;
+
+        plan.therapist_id.require_auth();
+
+        let mut goal: MeasurableGoal = env
+            .storage()
+            .instance()
+            .get(&DataKey::MeasurableGoal(goal_id))
+            .ok_or(Error::NotFound)?;
+
+        if goal.plan_id != plan_id {
+            return Err(Error::InvalidInput);
+        }
+
+        let entry = ProgressEntry {
+            goal_id,
+            current_value,
+            measured_at,
+        };
+
+        let mut progress: Vec<ProgressEntry> = env
+            .storage()
+            .instance()
+            .get(&DataKey::GoalProgressList(goal_id))
+            .unwrap_or(Vec::new(&env));
+        progress.push_back(entry);
+        env.storage()
+            .instance()
+            .set(&DataKey::GoalProgressList(goal_id), &progress);
+
+        // Detect first achievement.
+        if !goal.achieved && current_value >= goal.target_value {
+            goal.achieved = true;
+            env.storage()
+                .instance()
+                .set(&DataKey::MeasurableGoal(goal_id), &goal);
+
+            env.events().publish(
+                (Symbol::new(&env, "GoalAchieved"), plan_id),
+                (goal_id, current_value, measured_at),
+            );
+        }
+
+        Ok(())
+    }
+
+    /// Return the full time-series progress for a measurable goal.
+    pub fn get_goal_progress(env: Env, plan_id: u64, goal_id: u64) -> Vec<ProgressEntry> {
+        // Validate goal belongs to this plan before returning.
+        if let Some(goal) = env
+            .storage()
+            .instance()
+            .get::<_, MeasurableGoal>(&DataKey::MeasurableGoal(goal_id))
+        {
+            if goal.plan_id != plan_id {
+                return Vec::new(&env);
+            }
+        } else {
+            return Vec::new(&env);
+        }
+
+        env.storage()
+            .instance()
+            .get(&DataKey::GoalProgressList(goal_id))
+            .unwrap_or(Vec::new(&env))
+    }
+
+    /// Return a measurable goal by ID.
+    pub fn get_measurable_goal(env: Env, goal_id: u64) -> Result<MeasurableGoal, Error> {
+        env.storage()
+            .instance()
+            .get(&DataKey::MeasurableGoal(goal_id))
+            .ok_or(Error::NotFound)
     }
 }
 

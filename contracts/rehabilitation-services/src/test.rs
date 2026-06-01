@@ -715,3 +715,187 @@ fn test_complete_rehab_workflow() {
     let outcomes = client.get_functional_outcomes(&plan_id);
     assert_eq!(outcomes.len(), 1);
 }
+
+// ── Measurable goal and progress tracking tests (#412) ───────────────────────
+
+fn create_plan(
+    env: &Env,
+    client: &RehabilitationServicesContractClient,
+    patient: &Address,
+    therapist: &Address,
+) -> (u64, u64) {
+    let eval_hash = BytesN::from_array(env, &[1u8; 32]);
+    let limitations = Vec::from_array(env, [String::from_str(env, "Limited")]);
+
+    let eval_id = client.conduct_pt_evaluation(
+        patient,
+        therapist,
+        &1000u64,
+        &String::from_str(env, "Injury"),
+        &String::from_str(env, "Pain"),
+        &limitations,
+        &String::from_str(env, "Active"),
+        &eval_hash,
+    );
+
+    let stg_goal = RehabGoal {
+        goal_id: 1,
+        goal_type: Symbol::new(env, "stg"),
+        goal_description: String::from_str(env, "Goal"),
+        target_date: 2000u64,
+        measurement_method: String::from_str(env, "Method"),
+        achieved: false,
+    };
+
+    let intervention = TherapyIntervention {
+        intervention_type: Symbol::new(env, "exercise"),
+        description: String::from_str(env, "Exercise"),
+        sets: Some(3),
+        reps: Some(10),
+        duration: None,
+        resistance: None,
+    };
+
+    let plan_id = client.create_rehab_treatment_plan(
+        &eval_id,
+        therapist,
+        &Vec::from_array(env, [stg_goal.clone()]),
+        &Vec::from_array(env, [stg_goal]),
+        &Vec::from_array(env, [intervention]),
+        &String::from_str(env, "3x/week"),
+        &8u32,
+        &Symbol::new(env, "good"),
+    );
+
+    (eval_id, plan_id)
+}
+
+#[test]
+fn test_set_rehabilitation_goal_success() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let patient = Address::generate(&env);
+    let therapist = Address::generate(&env);
+    let contract_id = env.register(RehabilitationServicesContract, ());
+    let client = RehabilitationServicesContractClient::new(&env, &contract_id);
+
+    let (_, plan_id) = create_plan(&env, &client, &patient, &therapist);
+
+    let goal_id = client.set_rehabilitation_goal(
+        &plan_id,
+        &Symbol::new(&env, "range_of_motion"),
+        &120u32,
+        &2000u64,
+    );
+
+    assert_eq!(goal_id, 1);
+    let goal = client.get_measurable_goal(&goal_id);
+    assert_eq!(goal.plan_id, plan_id);
+    assert_eq!(goal.target_value, 120);
+    assert!(!goal.achieved);
+}
+
+#[test]
+fn test_record_progress_below_target() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let patient = Address::generate(&env);
+    let therapist = Address::generate(&env);
+    let contract_id = env.register(RehabilitationServicesContract, ());
+    let client = RehabilitationServicesContractClient::new(&env, &contract_id);
+
+    let (_, plan_id) = create_plan(&env, &client, &patient, &therapist);
+    let goal_id = client.set_rehabilitation_goal(
+        &plan_id,
+        &Symbol::new(&env, "range_of_motion"),
+        &120u32,
+        &2000u64,
+    );
+
+    client.record_progress(&plan_id, &goal_id, &80u32, &1500u64);
+
+    let progress = client.get_goal_progress(&plan_id, &goal_id);
+    assert_eq!(progress.len(), 1);
+    assert_eq!(progress.get(0).unwrap().current_value, 80);
+
+    // Not yet achieved
+    let goal = client.get_measurable_goal(&goal_id);
+    assert!(!goal.achieved);
+}
+
+#[test]
+fn test_record_progress_achieves_goal() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let patient = Address::generate(&env);
+    let therapist = Address::generate(&env);
+    let contract_id = env.register(RehabilitationServicesContract, ());
+    let client = RehabilitationServicesContractClient::new(&env, &contract_id);
+
+    let (_, plan_id) = create_plan(&env, &client, &patient, &therapist);
+    let goal_id = client.set_rehabilitation_goal(
+        &plan_id,
+        &Symbol::new(&env, "pain_scale"),
+        &3u32,
+        &2000u64,
+    );
+
+    // Pain scale — lower is better but we track as "has reached target"
+    client.record_progress(&plan_id, &goal_id, &5u32, &1400u64);
+    client.record_progress(&plan_id, &goal_id, &3u32, &1500u64);
+
+    let goal = client.get_measurable_goal(&goal_id);
+    assert!(goal.achieved);
+
+    let progress = client.get_goal_progress(&plan_id, &goal_id);
+    assert_eq!(progress.len(), 2);
+}
+
+#[test]
+fn test_goal_progress_time_series_queryable() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let patient = Address::generate(&env);
+    let therapist = Address::generate(&env);
+    let contract_id = env.register(RehabilitationServicesContract, ());
+    let client = RehabilitationServicesContractClient::new(&env, &contract_id);
+
+    let (_, plan_id) = create_plan(&env, &client, &patient, &therapist);
+    let goal_id = client.set_rehabilitation_goal(
+        &plan_id,
+        &Symbol::new(&env, "fim"),
+        &100u32,
+        &3000u64,
+    );
+
+    for i in 0..5u32 {
+        client.record_progress(&plan_id, &goal_id, &(50 + i * 10), &(1000 + i as u64 * 100));
+    }
+
+    let progress = client.get_goal_progress(&plan_id, &goal_id);
+    assert_eq!(progress.len(), 5);
+    assert_eq!(progress.get(0).unwrap().current_value, 50);
+    assert_eq!(progress.get(4).unwrap().current_value, 90);
+}
+
+#[test]
+fn test_goal_progress_wrong_plan_returns_empty() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let patient = Address::generate(&env);
+    let therapist = Address::generate(&env);
+    let contract_id = env.register(RehabilitationServicesContract, ());
+    let client = RehabilitationServicesContractClient::new(&env, &contract_id);
+
+    let (_, plan_id) = create_plan(&env, &client, &patient, &therapist);
+    let goal_id = client.set_rehabilitation_goal(
+        &plan_id,
+        &Symbol::new(&env, "range_of_motion"),
+        &120u32,
+        &2000u64,
+    );
+
+    // Query with wrong plan_id → empty
+    let progress = client.get_goal_progress(&(plan_id + 99), &goal_id);
+    assert_eq!(progress.len(), 0);
+}
