@@ -1,9 +1,7 @@
 #![cfg(test)]
-mod test;
-mod test_enhanced;
 
 use super::*;
-use soroban_sdk::{testutils::Address as _, Address, BytesN, Env, String, Symbol, Vec};
+use soroban_sdk::{testutils::{Address as _, Ledger}, Address, BytesN, Env, String, Symbol, Vec};
 
 // -----------------------------------------------------------------------
 // Helpers
@@ -36,19 +34,35 @@ fn submit(
 
     let hash = BytesN::from_array(env, &[1u8; 32]);
 
-    client
-        .submit_prior_authorization(
-            provider,
-            patient,
-            &1001u64,
-            &Symbol::new(env, "medication"),
-            &String::from_str(env, "Insulin Glargine"),
-            &service_codes,
-            &diagnosis_codes,
-            &hash,
-            &Symbol::new(env, "routine"),
-        )
-        .unwrap()
+    client.submit_prior_authorization(
+        provider,
+        patient,
+        &1001u64,
+        &Symbol::new(env, "medication"),
+        &String::from_str(env, "Insulin Glargine"),
+        &service_codes,
+        &diagnosis_codes,
+        &hash,
+        &Symbol::new(env, "routine"),
+    )
+}
+
+fn register_test_reviewer(
+    env: &Env,
+    client: &PriorAuthorizationContractClient,
+    insurer: &Address,
+    reviewer: &Address,
+) {
+    let mut specialties = Vec::new(env);
+    specialties.push_back(Symbol::new(env, "general"));
+    client.register_reviewer(
+        insurer,
+        reviewer,
+        &Symbol::new(env, "reviewer"),
+        &specialties,
+        &50u32,
+        &None,
+    );
 }
 
 fn approve(
@@ -57,17 +71,17 @@ fn approve(
     auth_id: u64,
     reviewer: &Address,
 ) {
-    client
-        .review_authorization(
-            &auth_id,
-            reviewer,
-            &Symbol::new(env, "approved"),
-            &Some(10u32),
-            &Some(1_000_000u64),
-            &Some(9_000_000u64),
-            &String::from_str(env, "Approved for chronic condition"),
-        )
-        .unwrap();
+    let insurer = Address::generate(env);
+    register_test_reviewer(env, client, &insurer, reviewer);
+    client.review_authorization(
+        &auth_id,
+        reviewer,
+        &Symbol::new(env, "approved"),
+        &Some(10u32),
+        &Some(1_000_000u64),
+        &Some(9_000_000u64),
+        &String::from_str(env, "Approved for chronic condition"),
+    );
 }
 
 fn deny(
@@ -76,17 +90,17 @@ fn deny(
     auth_id: u64,
     reviewer: &Address,
 ) {
-    client
-        .review_authorization(
-            &auth_id,
-            reviewer,
-            &Symbol::new(env, "denied"),
-            &None,
-            &None,
-            &None,
-            &String::from_str(env, "Not medically necessary"),
-        )
-        .unwrap();
+    let insurer = Address::generate(env);
+    register_test_reviewer(env, client, &insurer, reviewer);
+    client.review_authorization(
+        &auth_id,
+        reviewer,
+        &Symbol::new(env, "denied"),
+        &None,
+        &None,
+        &None,
+        &String::from_str(env, "Not medically necessary"),
+    );
 }
 
 // -----------------------------------------------------------------------
@@ -117,7 +131,7 @@ fn test_submit_initial_status_is_submitted() {
     let client = register_contract(&env);
     let id = submit(&env, &client, &provider, &patient);
 
-    let info = client.get_authorization_status(&id, &provider).unwrap();
+    let info = client.get_authorization_status(&id, &provider);
     assert!(matches!(info.status, AuthStatus::Submitted));
     assert_eq!(info.units_used, 0);
     assert!(info.decision.is_none());
@@ -141,7 +155,7 @@ fn test_attach_document_success() {
             &hash,
             &Symbol::new(&env, "clinical_notes"),
         )
-        .unwrap();
+;
 }
 
 #[test]
@@ -189,7 +203,7 @@ fn test_review_approve_success() {
     let reviewer = Address::generate(&env);
     approve(&env, &client, id, &reviewer);
 
-    let info = client.get_authorization_status(&id, &provider).unwrap();
+    let info = client.get_authorization_status(&id, &provider);
     assert!(matches!(info.status, AuthStatus::Approved));
     assert_eq!(info.approved_units, Some(10));
     assert!(info.valid_from.is_some());
@@ -205,7 +219,7 @@ fn test_review_deny_success() {
     let reviewer = Address::generate(&env);
     deny(&env, &client, id, &reviewer);
 
-    let info = client.get_authorization_status(&id, &provider).unwrap();
+    let info = client.get_authorization_status(&id, &provider);
     assert!(matches!(info.status, AuthStatus::Denied));
 }
 
@@ -215,20 +229,20 @@ fn test_review_more_info_needed() {
     let client = register_contract(&env);
     let id = submit(&env, &client, &provider, &patient);
     let reviewer = Address::generate(&env);
+    let insurer = Address::generate(&env);
+    register_test_reviewer(&env, &client, &insurer, &reviewer);
 
-    client
-        .review_authorization(
-            &id,
-            &reviewer,
-            &Symbol::new(&env, "more_info_needed"),
-            &None,
-            &None,
-            &None,
-            &String::from_str(&env, "Need additional clinical notes"),
-        )
-        .unwrap();
+    client.review_authorization(
+        &id,
+        &reviewer,
+        &Symbol::new(&env, "more_info_needed"),
+        &None,
+        &None,
+        &None,
+        &String::from_str(&env, "Need additional clinical notes"),
+    );
 
-    let info = client.get_authorization_status(&id, &provider).unwrap();
+    let info = client.get_authorization_status(&id, &provider);
     assert!(matches!(info.status, AuthStatus::MoreInfoNeeded));
 }
 
@@ -286,9 +300,9 @@ fn test_request_p2p_success() {
 
     client
         .request_peer_to_peer(&id, &provider, &2_000_000u64, &times)
-        .unwrap();
+;
 
-    let info = client.get_authorization_status(&id, &provider).unwrap();
+    let info = client.get_authorization_status(&id, &provider);
     assert!(matches!(info.status, AuthStatus::UnderReview));
 }
 
@@ -303,7 +317,7 @@ fn test_request_p2p_twice_fails() {
 
     client
         .request_peer_to_peer(&id, &provider, &2_000_000u64, &times)
-        .unwrap();
+;
 
     let result = client.try_request_peer_to_peer(&id, &provider, &2_000_000u64, &times);
     assert!(result.is_err());
@@ -320,16 +334,16 @@ fn test_schedule_p2p_success() {
 
     client
         .request_peer_to_peer(&id, &provider, &2_000_000u64, &times)
-        .unwrap();
+;
 
     let insurance_admin = Address::generate(&env);
     let medical_director = Address::generate(&env);
 
     client
         .schedule_peer_to_peer(&id, &insurance_admin, &3_000_000u64, &medical_director)
-        .unwrap();
+;
 
-    let info = client.get_authorization_status(&id, &provider).unwrap();
+    let info = client.get_authorization_status(&id, &provider);
     assert!(matches!(info.status, AuthStatus::PeerToPeerScheduled));
 }
 
@@ -362,11 +376,11 @@ fn test_appeal_level_1_success() {
     let hash = BytesN::from_array(&env, &[5u8; 32]);
     let appeal_id = client
         .appeal_denial(&id, &provider, &1u32, &hash, &None)
-        .unwrap();
+;
 
     assert_eq!(appeal_id, 1);
 
-    let info = client.get_authorization_status(&id, &provider).unwrap();
+    let info = client.get_authorization_status(&id, &provider);
     assert!(matches!(info.status, AuthStatus::Appealed));
 }
 
@@ -379,13 +393,13 @@ fn test_appeal_level_2_and_3() {
     deny(&env, &client, id, &reviewer);
 
     let h1 = BytesN::from_array(&env, &[5u8; 32]);
-    client.appeal_denial(&id, &provider, &1u32, &h1, &None).unwrap();
+    client.appeal_denial(&id, &provider, &1u32, &h1, &None);
 
     let h2 = BytesN::from_array(&env, &[6u8; 32]);
-    client.appeal_denial(&id, &provider, &2u32, &h2, &None).unwrap();
+    client.appeal_denial(&id, &provider, &2u32, &h2, &None);
 
     let h3 = BytesN::from_array(&env, &[7u8; 32]);
-    let appeal_id = client.appeal_denial(&id, &provider, &3u32, &h3, &None).unwrap();
+    let appeal_id = client.appeal_denial(&id, &provider, &3u32, &h3, &None);
 
     assert_eq!(appeal_id, 3);
 }
@@ -441,7 +455,7 @@ fn test_appeal_with_additional_evidence() {
 
     client
         .appeal_denial(&id, &provider, &1u32, &reason_hash, &Some(evidence_hash))
-        .unwrap();
+;
 }
 
 #[test]
@@ -450,20 +464,20 @@ fn test_review_history_and_appeal_chain_is_tamper_evident() {
     let client = register_contract(&env);
     let id = submit(&env, &client, &provider, &patient);
     let reviewer = Address::generate(&env);
+    let insurer = Address::generate(&env);
+    register_test_reviewer(&env, &client, &insurer, &reviewer);
 
-    client
-        .review_authorization(
-            &id,
-            &reviewer,
-            &Symbol::new(&env, "denied"),
-            &None,
-            &None,
-            &None,
-            &String::from_str(&env, "Initial denial based on policy criteria"),
-        )
-        .unwrap();
+    client.review_authorization(
+        &id,
+        &reviewer,
+        &Symbol::new(&env, "denied"),
+        &None,
+        &None,
+        &None,
+        &String::from_str(&env, "Initial denial based on policy criteria"),
+    );
 
-    let review_history = client.get_review_history(&id, &provider).unwrap();
+    let review_history = client.get_review_history(&id, &provider);
     assert_eq!(review_history.len(), 1);
     let first_review = review_history.get(0).unwrap();
     assert_eq!(first_review.reviewer_id, reviewer);
@@ -473,9 +487,9 @@ fn test_review_history_and_appeal_chain_is_tamper_evident() {
     let reason_hash = BytesN::from_array(&env, &[13u8; 32]);
     client
         .appeal_denial(&id, &provider, &1u32, &reason_hash, &None)
-        .unwrap();
+;
 
-    let appeals = client.get_appeal_history(&id, &provider).unwrap();
+    let appeals = client.get_appeal_history(&id, &provider);
     assert_eq!(appeals.len(), 1);
     let first_appeal = appeals.get(0).unwrap();
     assert!(first_appeal.previous_appeal_id.is_none());
@@ -501,7 +515,7 @@ fn test_expedite_success() {
             &String::from_str(&env, "Patient surgery in 48 hours"),
             &1_100_000u64,
         )
-        .unwrap();
+;
 }
 
 #[test]
@@ -556,7 +570,7 @@ fn test_extend_approved_success() {
             &String::from_str(&env, "Ongoing chronic condition"),
             &5u32,
         )
-        .unwrap();
+;
 }
 
 #[test]
@@ -606,9 +620,9 @@ fn test_track_usage_success() {
 
     client
         .track_authorization_usage(&id, &provider, &3u32, &1_500_000u64)
-        .unwrap();
+;
 
-    let info = client.get_authorization_status(&id, &provider).unwrap();
+    let info = client.get_authorization_status(&id, &provider);
     assert_eq!(info.units_used, 3);
 }
 
@@ -622,12 +636,12 @@ fn test_track_usage_accumulates() {
 
     client
         .track_authorization_usage(&id, &provider, &3u32, &1_500_000u64)
-        .unwrap();
+;
     client
         .track_authorization_usage(&id, &provider, &4u32, &1_600_000u64)
-        .unwrap();
+;
 
-    let info = client.get_authorization_status(&id, &provider).unwrap();
+    let info = client.get_authorization_status(&id, &provider);
     assert_eq!(info.units_used, 7);
 }
 
@@ -656,27 +670,27 @@ fn test_track_usage_not_approved_fails() {
 #[test]
 fn test_track_usage_expired_fails() {
     let (env, provider, patient) = setup();
-    env.ledger().set_timestamp(1_000_000);
+    env.ledger().with_mut(|li| li.timestamp = 1_000_000);
 
     let client = register_contract(&env);
     let id = submit(&env, &client, &provider, &patient);
     let reviewer = Address::generate(&env);
+    let insurer = Address::generate(&env);
+    register_test_reviewer(&env, &client, &insurer, &reviewer);
 
     // Approve with valid_until in the past relative to usage tracking time
-    client
-        .review_authorization(
-            &id,
-            &reviewer,
-            &Symbol::new(&env, "approved"),
-            &Some(10u32),
-            &Some(1_000_000u64),
-            &Some(1_500_000u64), // expires at 1.5M
-            &String::from_str(&env, "Approved"),
-        )
-        .unwrap();
+    client.review_authorization(
+        &id,
+        &reviewer,
+        &Symbol::new(&env, "approved"),
+        &Some(10u32),
+        &Some(1_000_000u64),
+        &Some(1_500_000u64), // expires at 1.5M
+        &String::from_str(&env, "Approved"),
+    );
 
     // Advance time past expiry
-    env.ledger().set_timestamp(2_000_000);
+    env.ledger().with_mut(|li| li.timestamp = 2_000_000);
 
     let result = client.try_track_authorization_usage(&id, &provider, &1u32, &2_000_000u64);
     assert!(result.is_err());
@@ -715,7 +729,7 @@ fn test_full_workflow_approve_and_use() {
             &doc_hash,
             &Symbol::new(&env, "lab_results"),
         )
-        .unwrap();
+;
 
     // 3. Expedite
     client
@@ -725,7 +739,7 @@ fn test_full_workflow_approve_and_use() {
             &String::from_str(&env, "Urgent surgery"),
             &1_100_000u64,
         )
-        .unwrap();
+;
 
     // 4. Review -> approve
     let reviewer = Address::generate(&env);
@@ -734,7 +748,7 @@ fn test_full_workflow_approve_and_use() {
     // 5. Track usage (3 of 10)
     client
         .track_authorization_usage(&id, &provider, &3u32, &1_500_000u64)
-        .unwrap();
+;
 
     // 6. Extend
     client
@@ -744,14 +758,14 @@ fn test_full_workflow_approve_and_use() {
             &String::from_str(&env, "Continued treatment needed"),
             &5u32,
         )
-        .unwrap();
+;
 
     // 7. Track more usage (5 of 10)
     client
         .track_authorization_usage(&id, &provider, &5u32, &1_600_000u64)
-        .unwrap();
+;
 
-    let info = client.get_authorization_status(&id, &provider).unwrap();
+    let info = client.get_authorization_status(&id, &provider);
     assert!(matches!(info.status, AuthStatus::Approved));
     assert_eq!(info.units_used, 8);
 }
@@ -768,14 +782,14 @@ fn test_full_workflow_deny_appeal_three_levels() {
     times.push_back(String::from_str(&env, "Thu 11am"));
     client
         .request_peer_to_peer(&id, &provider, &2_000_000u64, &times)
-        .unwrap();
+;
 
     // Schedule peer-to-peer
     let insurance_admin = Address::generate(&env);
     let medical_director = Address::generate(&env);
     client
         .schedule_peer_to_peer(&id, &insurance_admin, &3_000_000u64, &medical_director)
-        .unwrap();
+;
 
     // Deny after P2P
     let reviewer = Address::generate(&env);
@@ -783,18 +797,18 @@ fn test_full_workflow_deny_appeal_three_levels() {
 
     // Level 1 appeal
     let h1 = BytesN::from_array(&env, &[30u8; 32]);
-    client.appeal_denial(&id, &provider, &1u32, &h1, &None).unwrap();
+    client.appeal_denial(&id, &provider, &1u32, &h1, &None);
 
     // Level 2 appeal
     let h2 = BytesN::from_array(&env, &[31u8; 32]);
     let ev2 = BytesN::from_array(&env, &[32u8; 32]);
     client
         .appeal_denial(&id, &provider, &2u32, &h2, &Some(ev2))
-        .unwrap();
+;
 
     // Level 3 appeal (final)
     let h3 = BytesN::from_array(&env, &[33u8; 32]);
-    let appeal_id = client.appeal_denial(&id, &provider, &3u32, &h3, &None).unwrap();
+    let appeal_id = client.appeal_denial(&id, &provider, &3u32, &h3, &None);
     assert_eq!(appeal_id, 3);
 
     // 4th level should fail
@@ -802,6 +816,6 @@ fn test_full_workflow_deny_appeal_three_levels() {
     let result = client.try_appeal_denial(&id, &provider, &4u32, &h4, &None);
     assert!(result.is_err());
 
-    let info = client.get_authorization_status(&id, &provider).unwrap();
+    let info = client.get_authorization_status(&id, &provider);
     assert!(matches!(info.status, AuthStatus::Appealed));
 }

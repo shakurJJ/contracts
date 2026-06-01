@@ -7,11 +7,16 @@ mod types;
 
 #[cfg(test)]
 mod test;
+#[cfg(test)]
+mod test_enhanced;
 
-use soroban_sdk::{contract, contractimpl, Address, Bytes, BytesN, Env, String, Symbol, Vec};
+use soroban_sdk::{contract, contractimpl, xdr::ToXdr, Address, Bytes, BytesN, Env, String, Symbol, Vec};
 use storage::*;
 use types::*;
 use shared::temporal;
+
+/// Shorter deadline (hours) assigned to escalated requests.
+const ESCALATION_DEADLINE_HOURS: u64 = 4;
 
 const MAX_APPEAL_LEVEL: u32 = 3;
 
@@ -26,7 +31,7 @@ fn compute_review_entry_hash(env: &Env, review: &ReviewRecord) -> BytesN<32> {
         data.append(&prev_hash.clone().to_xdr(env));
     }
     data.extend_from_array(&review.timestamp.to_be_bytes());
-    env.crypto().sha256(&data)
+    env.crypto().sha256(&data).into()
 }
 
 fn compute_appeal_chain_hash(
@@ -51,7 +56,7 @@ fn compute_appeal_chain_hash(
     data.append(&provider_id.clone().to_xdr(env));
     data.extend_from_array(&appeal_level.to_be_bytes());
     data.extend_from_array(&submitted_at.to_be_bytes());
-    env.crypto().sha256(&data)
+    env.crypto().sha256(&data).into()
 }
 
 #[contract]
@@ -290,7 +295,7 @@ impl PriorAuthorizationContract {
                 .ok_or(Error::ReviewNotFound)?;
             Some(last_review.review_entry_hash.clone())
         };
-        let review_notes_hash = env.crypto().sha256(&review_notes.clone().to_xdr(&env));
+        let review_notes_hash: BytesN<32> = env.crypto().sha256(&review_notes.clone().to_xdr(&env)).into();
         let review_id = next_review_id(&env);
         let mut review_record = ReviewRecord {
             review_id,
@@ -463,8 +468,8 @@ impl PriorAuthorizationContract {
         };
 
         let review_history = load_review_history(&env, auth_request_id);
-        let ruling_dependency_hash = if review_history.is_empty() {
-            env.crypto().sha256(&Bytes::new(&env))
+        let ruling_dependency_hash: BytesN<32> = if review_history.is_empty() {
+            env.crypto().sha256(&Bytes::new(&env)).into()
         } else {
             review_history
                 .get(review_history.len() - 1)
@@ -643,7 +648,75 @@ impl PriorAuthorizationContract {
         Ok(())
     }
 
+    /// Register a reviewer so they can be assigned to authorization requests.
+    /// The insurer registers reviewers into their pool.
+    pub fn register_reviewer(
+        env: Env,
+        insurer_id: Address,
+        reviewer_id: Address,
+        role: Symbol,
+        specialties: Vec<Symbol>,
+        max_cases: u32,
+        expires_at: Option<u64>,
+    ) -> Result<(), Error> {
+        insurer_id.require_auth();
+
+        let reviewer = Reviewer {
+            reviewer_id: reviewer_id.clone(),
+            insurer_id: insurer_id.clone(),
+            role,
+            specialties,
+            max_cases,
+            current_cases: 0,
+            authorized_at: env.ledger().timestamp(),
+            expires_at,
+            is_active: true,
+        };
+
+        save_reviewer(&env, &reviewer);
+
+        env.events().publish(
+            (Symbol::new(&env, "reviewer_registered"),),
+            (reviewer_id, insurer_id),
+        );
+
+        Ok(())
+    }
+
+    /// Configure SLA deadlines for a given urgency level.
+    pub fn configure_sla(
+        env: Env,
+        insurer_id: Address,
+        urgency: Symbol,
+        standard_deadline_hours: u64,
+        expedited_deadline_hours: u64,
+        auto_approval_threshold: u32,
+        requires_medical_director: bool,
+    ) -> Result<(), Error> {
+        insurer_id.require_auth();
+
+        let config = SLAConfig {
+            urgency: urgency.clone(),
+            standard_deadline_hours,
+            expedited_deadline_hours,
+            auto_approval_threshold,
+            requires_medical_director,
+        };
+        save_sla_config(&env, &config);
+
+        env.events().publish(
+            (Symbol::new(&env, "sla_configured"),),
+            (insurer_id, urgency),
+        );
+
+        Ok(())
+    }
+
     /// Get the current status and summary of an authorization request.
+    ///
+    /// Detects SLA deadline breaches on-read: if the deadline has passed and
+    /// the request is still in an unresolved state an `SLABreached` event is
+    /// emitted and the request is added to the overdue list.
     pub fn get_authorization_status(
         env: Env,
         auth_request_id: u64,
@@ -652,6 +725,23 @@ impl PriorAuthorizationContract {
         requester.require_auth();
 
         let req = load_auth_request(&env, auth_request_id).ok_or(Error::AuthRequestNotFound)?;
+
+        // Detect SLA breach for unresolved requests.
+        let unresolved = matches!(
+            req.status,
+            AuthStatus::Submitted
+                | AuthStatus::UnderReview
+                | AuthStatus::MoreInfoNeeded
+                | AuthStatus::PeerToPeerScheduled
+        );
+        if unresolved && env.ledger().timestamp() > req.sla_deadline {
+            let breach_duration = env.ledger().timestamp().saturating_sub(req.sla_deadline);
+            add_overdue_auth(&env, auth_request_id);
+            env.events().publish(
+                (Symbol::new(&env, "SLABreached"),),
+                (auth_request_id, req.sla_deadline, env.ledger().timestamp(), breach_duration),
+            );
+        }
 
         Ok(AuthorizationInfo {
             auth_request_id: req.auth_request_id,
@@ -667,6 +757,90 @@ impl PriorAuthorizationContract {
             submitted_at: req.submitted_at,
             decision_date: req.decision_date,
         })
+    }
+
+    /// Scan overdue authorization requests for an insurer and escalate them to
+    /// secondary reviewers.
+    ///
+    /// Each escalated request is assigned to an available reviewer from the
+    /// insurer's pool and given a new `ESCALATION_DEADLINE_HOURS`-hour deadline.
+    /// Emits `Escalated` events with the original deadline, actual elapsed time,
+    /// and breach duration.
+    pub fn escalate_expired_authorizations(
+        env: Env,
+        insurer_id: Address,
+    ) -> Result<u32, Error> {
+        insurer_id.require_auth();
+
+        let overdue_ids = get_overdue_auths(&env);
+        let reviewer_ids = load_insurer_reviewers(&env, &insurer_id);
+
+        if reviewer_ids.is_empty() {
+            return Ok(0);
+        }
+
+        let now = env.ledger().timestamp();
+        let mut escalated_count: u32 = 0;
+        let mut reviewer_idx: u32 = 0;
+
+        for auth_id in overdue_ids.iter() {
+            let mut req = match load_auth_request(&env, auth_id) {
+                Some(r) => r,
+                None => continue,
+            };
+
+            // Skip already-resolved or already-escalated requests.
+            let unresolved = matches!(
+                req.status,
+                AuthStatus::Submitted
+                    | AuthStatus::UnderReview
+                    | AuthStatus::MoreInfoNeeded
+                    | AuthStatus::PeerToPeerScheduled
+            );
+            if !unresolved {
+                remove_overdue_auth(&env, auth_id);
+                continue;
+            }
+
+            // Pick the next available reviewer (round-robin).
+            let reviewer_id = reviewer_ids
+                .get(reviewer_idx % reviewer_ids.len())
+                .ok_or(Error::ReviewerNotFound)?;
+            reviewer_idx += 1;
+
+            let reviewer = load_reviewer(&env, &reviewer_id).ok_or(Error::ReviewerNotFound)?;
+            if !reviewer.is_active {
+                continue;
+            }
+
+            let original_deadline = req.sla_deadline;
+            let breach_duration = now.saturating_sub(original_deadline);
+            let new_deadline = now + (ESCALATION_DEADLINE_HOURS * 3600);
+
+            req.status = AuthStatus::Escalated;
+            req.sla_deadline = new_deadline;
+            req.reviewer_id = Some(reviewer_id.clone());
+            req.reviewer_role = Some(reviewer.role.clone());
+            save_auth_request(&env, &req);
+
+            remove_overdue_auth(&env, auth_id);
+
+            env.events().publish(
+                (Symbol::new(&env, "Escalated"),),
+                (
+                    auth_id,
+                    reviewer_id,
+                    original_deadline,
+                    now,
+                    breach_duration,
+                    new_deadline,
+                ),
+            );
+
+            escalated_count += 1;
+        }
+
+        Ok(escalated_count)
     }
 
     /// Return the full appeal timeline for an authorization request.

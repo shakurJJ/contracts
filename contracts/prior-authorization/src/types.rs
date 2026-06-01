@@ -45,6 +45,8 @@ pub enum AuthStatus {
     Appealed,
     /// Authorization has expired.
     Expired,
+    /// SLA breached; escalated to a secondary reviewer pool.
+    Escalated,
 }
 
 /// Authorization request with SLA tracking
@@ -196,7 +198,8 @@ pub struct SLAConfig {
     pub requires_medical_director: bool,
 }
 
-/// Reviewer statistics for workload monitoring
+/// Reviewer statistics for workload monitoring.
+/// `utilization_bps` is utilization as basis points (current_cases * 10_000 / max_cases).
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ReviewerStats {
@@ -204,7 +207,7 @@ pub struct ReviewerStats {
     pub role: Symbol,
     pub current_cases: u32,
     pub max_cases: u32,
-    pub utilization_ratio: f64,
+    pub utilization_bps: u32,
     pub is_active: bool,
     pub expires_at: Option<u64>,
 }
@@ -246,6 +249,6 @@ pub enum DataKey {
     InsurerReviewers(Address),
     /// urgency -> SLAConfig
     SLAConfig(Symbol),
-    /// SLA tracking
-    OverdueAuths(Vec<u64>),
+    /// SLA tracking: stores Vec<u64> of overdue auth_request_ids.
+    OverdueAuths,
 }

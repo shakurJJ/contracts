@@ -2,7 +2,7 @@ use soroban_sdk::{Address, Env, Vec, Symbol};
 
 use crate::types::{
     Appeal, AuthorizationRequest, DataKey, ExtensionRequest, PeerToPeerRequest,
-    ReviewRecord, SupportingDocument, UsageRecord,
+    ReviewRecord, Reviewer, SLAConfig, SupportingDocument, UsageRecord,
 };
 
 // -----------------------------------------------------------------------
@@ -218,7 +218,14 @@ pub fn save_reviewer(env: &Env, reviewer: &Reviewer) {
         .get(&DataKey::InsurerReviewers(reviewer.insurer_id.clone()))
         .unwrap_or(Vec::new(env));
     
-    if !reviewers.iter().any(|r| r == &reviewer.reviewer_id) {
+    let mut already_listed = false;
+    for r in reviewers.iter() {
+        if r == reviewer.reviewer_id {
+            already_listed = true;
+            break;
+        }
+    }
+    if !already_listed {
         reviewers.push_back(reviewer.reviewer_id.clone());
         env.storage()
             .persistent()
@@ -281,34 +288,43 @@ pub fn load_sla_config(env: &Env, urgency: &Symbol) -> Option<SLAConfig> {
 pub fn add_overdue_auth(env: &Env, auth_request_id: u64) {
     let mut overdue: Vec<u64> = env
         .storage()
-        .instance()
-        .get(&DataKey::OverdueAuths(Vec::new(env)))
+        .persistent()
+        .get(&DataKey::OverdueAuths)
         .unwrap_or(Vec::new(env));
-    
-    if !overdue.iter().any(|&id| id == auth_request_id) {
-        overdue.push_back(auth_request_id);
-        env.storage()
-            .instance()
-            .set(&DataKey::OverdueAuths(overdue), &());
+
+    // Deduplicate.
+    for id in overdue.iter() {
+        if id == auth_request_id {
+            return;
+        }
     }
+    overdue.push_back(auth_request_id);
+    env.storage()
+        .persistent()
+        .set(&DataKey::OverdueAuths, &overdue);
 }
 
 pub fn remove_overdue_auth(env: &Env, auth_request_id: u64) {
-    let mut overdue: Vec<u64> = env
+    let overdue: Vec<u64> = env
         .storage()
-        .instance()
-        .get(&DataKey::OverdueAuths(Vec::new(env)))
+        .persistent()
+        .get(&DataKey::OverdueAuths)
         .unwrap_or(Vec::new(env));
-    
-    overdue.retain(|&id| id != auth_request_id);
+
+    let mut updated: Vec<u64> = Vec::new(env);
+    for id in overdue.iter() {
+        if id != auth_request_id {
+            updated.push_back(id);
+        }
+    }
     env.storage()
-        .instance()
-        .set(&DataKey::OverdueAuths(overdue), &());
+        .persistent()
+        .set(&DataKey::OverdueAuths, &updated);
 }
 
 pub fn get_overdue_auths(env: &Env) -> Vec<u64> {
     env.storage()
-        .instance()
-        .get(&DataKey::OverdueAuths(Vec::new(env)))
+        .persistent()
+        .get(&DataKey::OverdueAuths)
         .unwrap_or(Vec::new(env))
 }

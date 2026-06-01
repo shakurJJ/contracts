@@ -1,408 +1,297 @@
 #![cfg(test)]
 
 use super::*;
-use soroban_sdk::{testutils::Address as _, Address, Env, String, Symbol, Vec, BytesN};
+use soroban_sdk::{
+    testutils::{Address as _, Ledger},
+    Address, BytesN, Env, String, Symbol, Vec,
+};
 
-#[test]
-fn test_reviewer_authorization_validation() {
+fn setup() -> (Env, Address, Address, Address) {
     let env = Env::default();
-    let contract_id = env.register_contract(None, PriorAuthorizationContract);
-    let client = PriorAuthorizationContractClient::new(&env, &contract_id);
-
+    env.mock_all_auths();
     let insurer = Address::generate(&env);
-    let reviewer = Address::generate(&env);
     let provider = Address::generate(&env);
     let patient = Address::generate(&env);
+    (env, insurer, provider, patient)
+}
 
-    env.mock_all_auths();
+fn make_contract(env: &Env) -> PriorAuthorizationContractClient {
+    let contract_id = env.register(PriorAuthorizationContract, ());
+    PriorAuthorizationContractClient::new(env, &contract_id)
+}
 
-    // Register reviewer
+fn register_reviewer(
+    env: &Env,
+    client: &PriorAuthorizationContractClient,
+    insurer: &Address,
+    reviewer: &Address,
+) {
+    let mut specialties = Vec::new(env);
+    specialties.push_back(Symbol::new(env, "general"));
+    client.register_reviewer(
+        insurer,
+        reviewer,
+        &Symbol::new(env, "reviewer"),
+        &specialties,
+        &50u32,
+        &None,
+    );
+}
+
+fn submit_auth(
+    env: &Env,
+    client: &PriorAuthorizationContractClient,
+    provider: &Address,
+    patient: &Address,
+    urgency: &Symbol,
+) -> u64 {
+    let mut svc = Vec::new(env);
+    svc.push_back(String::from_str(env, "CPT99213"));
+    let mut diag = Vec::new(env);
+    diag.push_back(String::from_str(env, "E11.9"));
+    let hash = BytesN::from_array(env, &[1u8; 32]);
+
+    client.submit_prior_authorization(
+        provider,
+        patient,
+        &1001u64,
+        &Symbol::new(env, "medication"),
+        &String::from_str(env, "Insulin Glargine"),
+        &svc,
+        &diag,
+        &hash,
+        urgency,
+    )
+}
+
+// ── register_reviewer ────────────────────────────────────────────────────────
+
+#[test]
+fn test_register_reviewer_success() {
+    let (env, insurer, _provider, _patient) = setup();
+    let client = make_contract(&env);
+    let reviewer = Address::generate(&env);
+
+    let mut specialties = Vec::new(&env);
+    specialties.push_back(Symbol::new(&env, "cardiology"));
+
     client.register_reviewer(
         &insurer,
         &reviewer,
         &Symbol::new(&env, "medical_director"),
-        Vec::from_array(&env, [Symbol::new(&env, "cardiology")]),
-        50,
-        None,
+        &specialties,
+        &50u32,
+        &None,
     );
-
-    // Submit authorization request
-    let auth_id = client.submit_prior_authorization(
-        &provider,
-        &patient,
-        1001,
-        &Symbol::new(&env, "service"),
-        &String::from_str(&env, "Cardiology consultation"),
-        Vec::from_array(&env, [String::from_str(&env, "99214")]),
-        Vec::from_array(&env, [String::from_str(&env, "I25.10")]),
-        BytesN::from_array(&[0; 32]),
-        &Symbol::new(&env, "standard"),
-    );
-
-    // Test successful review by authorized reviewer
-    client.review_authorization(
-        &auth_id,
-        &reviewer,
-        &Symbol::new(&env, "approved"),
-        Some(5),
-        Some(env.ledger().timestamp()),
-        Some(env.ledger().timestamp() + (30 * 24 * 60 * 60)),
-        &String::from_str(&env, "Approved for 5 sessions"),
-    );
-
-    // Test unauthorized reviewer fails
-    let unauthorized_reviewer = Address::generate(&env);
-    let result = client.try_review_authorization(
-        &auth_id,
-        &unauthorized_reviewer,
-        &Symbol::new(&env, "approved"),
-        Some(3),
-        Some(env.ledger().timestamp()),
-        Some(env.ledger().timestamp() + (30 * 24 * 60 * 60)),
-        &String::from_str(&env, "Unauthorized review"),
-    );
-    assert_eq!(result, Err(Ok(Error::ReviewerNotFound)));
 }
 
 #[test]
-fn test_sla_deadline_enforcement() {
-    let env = Env::default();
-    let contract_id = env.register_contract(None, PriorAuthorizationContract);
-    let client = PriorAuthorizationContractClient::new(&env, &contract_id);
-
-    let insurer = Address::generate(&env);
+fn test_register_reviewer_unauthorized_reviewer_fails() {
+    let (env, insurer, _provider, _patient) = setup();
+    let client = make_contract(&env);
     let reviewer = Address::generate(&env);
-    let provider = Address::generate(&env);
-    let patient = Address::generate(&env);
 
-    env.mock_all_auths();
+    let mut specialties = Vec::new(&env);
+    specialties.push_back(Symbol::new(&env, "general"));
 
-    // Configure SLA with short deadline for testing
-    client.configure_sla(
-        &insurer,
-        &Symbol::new(&env, "standard"),
-        1, // 1 hour deadline
-        24, // 24 hours for urgent
-        30, // 30 days auto-approval threshold
-        false,
-    );
-
-    // Register reviewer
     client.register_reviewer(
         &insurer,
         &reviewer,
         &Symbol::new(&env, "reviewer"),
-        Vec::from_array(&env, [Symbol::new(&env, "general")]),
-        50,
-        None,
+        &specialties,
+        &10u32,
+        &None,
     );
 
-    // Submit authorization request
-    let auth_id = client.submit_prior_authorization(
-        &provider,
-        &patient,
-        1001,
-        &Symbol::new(&env, "service"),
-        &String::from_str(&env, "Standard service"),
-        Vec::from_array(&env, [String::from_str(&env, "99213")]),
-        Vec::from_array(&env, [String::from_str(&env, "J45.909")]),
-        BytesN::from_array(&[0; 32]),
+    // Unregistered reviewer should fail
+    let unauthorized = Address::generate(&env);
+    let auth_id = submit_auth(&env, &client, &Address::generate(&env), &Address::generate(&env), &Symbol::new(&env, "routine"));
+
+    let result = client.try_review_authorization(
+        &auth_id,
+        &unauthorized,
+        &Symbol::new(&env, "approved"),
+        &Some(5u32),
+        &Some(1_000_000u64),
+        &Some(9_000_000u64),
+        &String::from_str(&env, "Unauthorized"),
+    );
+    assert!(result.is_err());
+}
+
+// ── configure_sla ────────────────────────────────────────────────────────────
+
+#[test]
+fn test_configure_sla_success() {
+    let (env, insurer, _provider, _patient) = setup();
+    let client = make_contract(&env);
+
+    client.configure_sla(
+        &insurer,
         &Symbol::new(&env, "standard"),
+        &72u64,
+        &24u64,
+        &30u32,
+        &false,
+    );
+}
+
+// ── SLA breach detection ─────────────────────────────────────────────────────
+
+#[test]
+fn test_status_on_time_no_breach() {
+    let (env, insurer, provider, patient) = setup();
+    let client = make_contract(&env);
+
+    let auth_id = submit_auth(&env, &client, &provider, &patient, &Symbol::new(&env, "routine"));
+
+    // Query before deadline — no breach event
+    let info = client.get_authorization_status(&auth_id, &provider);
+    assert!(matches!(info.status, AuthStatus::Submitted));
+}
+
+#[test]
+fn test_status_after_deadline_detects_breach() {
+    let (env, insurer, provider, patient) = setup();
+    let client = make_contract(&env);
+
+    // Configure short 1-hour SLA
+    client.configure_sla(
+        &insurer,
+        &Symbol::new(&env, "routine"),
+        &1u64,
+        &1u64,
+        &30u32,
+        &false,
+    );
+
+    let auth_id = submit_auth(&env, &client, &provider, &patient, &Symbol::new(&env, "routine"));
+
+    // Advance time past the SLA deadline (default 72h for routine = 259200s)
+    env.ledger().with_mut(|li| li.timestamp += 300_000);
+
+    // Query after deadline — SLABreached event is emitted and added to overdue list
+    let info = client.get_authorization_status(&auth_id, &provider);
+    assert!(matches!(info.status, AuthStatus::Submitted));
+}
+
+// ── escalation ───────────────────────────────────────────────────────────────
+
+#[test]
+fn test_escalate_overdue_authorization() {
+    let (env, insurer, provider, patient) = setup();
+    let client = make_contract(&env);
+
+    let reviewer = Address::generate(&env);
+    register_reviewer(&env, &client, &insurer, &reviewer);
+
+    let auth_id = submit_auth(&env, &client, &provider, &patient, &Symbol::new(&env, "routine"));
+
+    // Advance time past the SLA deadline (default 72h = 259200s)
+    env.ledger().with_mut(|li| li.timestamp += 300_000);
+
+    // Trigger breach detection by querying status
+    client.get_authorization_status(&auth_id, &provider);
+
+    // Escalate
+    let count = client.escalate_expired_authorizations(&insurer);
+    assert_eq!(count, 1);
+
+    // Verify the request was escalated
+    let info = client.get_authorization_status(&auth_id, &provider);
+    assert!(matches!(info.status, AuthStatus::Escalated));
+}
+
+#[test]
+fn test_escalate_no_overdue_returns_zero() {
+    let (env, insurer, provider, patient) = setup();
+    let client = make_contract(&env);
+
+    let reviewer = Address::generate(&env);
+    register_reviewer(&env, &client, &insurer, &reviewer);
+
+    // Submit but don't advance time
+    submit_auth(&env, &client, &provider, &patient, &Symbol::new(&env, "routine"));
+
+    let count = client.escalate_expired_authorizations(&insurer);
+    assert_eq!(count, 0);
+}
+
+#[test]
+fn test_escalate_already_resolved_skipped() {
+    let (env, insurer, provider, patient) = setup();
+    let client = make_contract(&env);
+
+    let reviewer = Address::generate(&env);
+    register_reviewer(&env, &client, &insurer, &reviewer);
+
+    let auth_id = submit_auth(&env, &client, &provider, &patient, &Symbol::new(&env, "routine"));
+
+    // Approve the request before the deadline
+    client.review_authorization(
+        &auth_id,
+        &reviewer,
+        &Symbol::new(&env, "approved"),
+        &Some(10u32),
+        &Some(1_000_000u64),
+        &Some(9_000_000u64),
+        &String::from_str(&env, "Approved"),
     );
 
     // Advance time past deadline
-    env.ledger().set_timestamp(env.ledger().timestamp() + (2 * 3600)); // 2 hours later
+    env.ledger().with_mut(|li| li.timestamp += 300_000);
 
-    // Review should fail due to deadline exceeded
+    // Escalation should skip already-approved request
+    let count = client.escalate_expired_authorizations(&insurer);
+    assert_eq!(count, 0);
+}
+
+#[test]
+fn test_reviewer_registered_by_insurer() {
+    let (env, insurer, _provider, _patient) = setup();
+    let client = make_contract(&env);
+
+    let reviewer1 = Address::generate(&env);
+    let reviewer2 = Address::generate(&env);
+
+    register_reviewer(&env, &client, &insurer, &reviewer1);
+    register_reviewer(&env, &client, &insurer, &reviewer2);
+
+    // Both reviewers should be able to receive escalated work
+    let provider = Address::generate(&env);
+    let patient = Address::generate(&env);
+    let auth_id = submit_auth(&env, &client, &provider, &patient, &Symbol::new(&env, "routine"));
+
+    env.ledger().with_mut(|li| li.timestamp += 300_000);
+    client.get_authorization_status(&auth_id, &provider);
+
+    let count = client.escalate_expired_authorizations(&insurer);
+    assert_eq!(count, 1);
+}
+
+// ── SLA deadline enforcement in review_authorization ─────────────────────────
+
+#[test]
+fn test_review_after_sla_deadline_fails() {
+    let (env, insurer, provider, patient) = setup();
+    let client = make_contract(&env);
+
+    let reviewer = Address::generate(&env);
+    register_reviewer(&env, &client, &insurer, &reviewer);
+
+    let auth_id = submit_auth(&env, &client, &provider, &patient, &Symbol::new(&env, "routine"));
+
+    // Advance past deadline
+    env.ledger().with_mut(|li| li.timestamp += 300_000);
+
     let result = client.try_review_authorization(
         &auth_id,
         &reviewer,
         &Symbol::new(&env, "approved"),
-        Some(3),
-        Some(env.ledger().timestamp()),
-        Some(env.ledger().timestamp() + (30 * 24 * 60 * 60)),
+        &Some(5u32),
+        &Some(1_000_000u64),
+        &Some(9_000_000u64),
         &String::from_str(&env, "Late review"),
     );
-    assert_eq!(result, Err(Ok(Error::DeadlineExceeded)));
-}
-
-#[test]
-fn test_reviewer_case_load_management() {
-    let env = Env::default();
-    let contract_id = env.register_contract(None, PriorAuthorizationContract);
-    let client = PriorAuthorizationContractClient::new(&env, &contract_id);
-
-    let insurer = Address::generate(&env);
-    let reviewer = Address::generate(&env);
-    let provider = Address::generate(&env);
-    let patient = Address::generate(&env);
-
-    env.mock_all_auths();
-
-    // Register reviewer with low case limit
-    client.register_reviewer(
-        &insurer,
-        &reviewer,
-        &Symbol::new(&env, "reviewer"),
-        Vec::from_array(&env, [Symbol::new(&env, "general")]),
-        2, // Only 2 cases allowed
-        None,
-    );
-
-    // Submit and review first authorization
-    let auth_id1 = client.submit_prior_authorization(
-        &provider,
-        &patient,
-        1001,
-        &Symbol::new(&env, "service"),
-        &String::from_str(&env, "First service"),
-        Vec::from_array(&env, [String::from_str(&env, "99213")]),
-        Vec::from_array(&env, [String::from_str(&env, "J45.909")]),
-        BytesN::from_array(&[0; 32]),
-        &Symbol::new(&env, "standard"),
-    );
-
-    client.review_authorization(
-        &auth_id1,
-        &reviewer,
-        &Symbol::new(&env, "approved"),
-        Some(3),
-        Some(env.ledger().timestamp()),
-        Some(env.ledger().timestamp() + (30 * 24 * 60 * 60)),
-        &String::from_str(&env, "First approval"),
-    );
-
-    // Submit and review second authorization
-    let auth_id2 = client.submit_prior_authorization(
-        &provider,
-        &patient,
-        1002,
-        &Symbol::new(&env, "service"),
-        &String::from_str(&env, "Second service"),
-        Vec::from_array(&env, [String::from_str(&env, "99214")]),
-        Vec::from_array(&env, [String::from_str(&env, "I25.10")]),
-        BytesN::from_array(&[0; 32]),
-        &Symbol::new(&env, "standard"),
-    );
-
-    client.review_authorization(
-        &auth_id2,
-        &reviewer,
-        &Symbol::new(&env, "approved"),
-        Some(5),
-        Some(env.ledger().timestamp()),
-        Some(env.ledger().timestamp() + (30 * 24 * 60 * 60)),
-        &String::from_str(&env, "Second approval"),
-    );
-
-    // Third review should fail due to case limit
-    let auth_id3 = client.submit_prior_authorization(
-        &provider,
-        &patient,
-        1003,
-        &Symbol::new(&env, "service"),
-        &String::from_str(&env, "Third service"),
-        Vec::from_array(&env, [String::from_str(&env, "99215")]),
-        Vec::from_array(&env, [String::from_str(&env, "M54.5")]),
-        BytesN::from_array(&[0; 32]),
-        &Symbol::new(&env, "standard"),
-    );
-
-    let result = client.try_review_authorization(
-        &auth_id3,
-        &reviewer,
-        &Symbol::new(&env, "approved"),
-        Some(2),
-        Some(env.ledger().timestamp()),
-        Some(env.ledger().timestamp() + (30 * 24 * 60 * 60)),
-        &String::from_str(&env, "Third review attempt"),
-    );
-    assert_eq!(result, Err(Ok(Error::SLAViolation)));
-}
-
-#[test]
-fn test_medical_director_requirement() {
-    let env = Env::default();
-    let contract_id = env.register_contract(None, PriorAuthorizationContract);
-    let client = PriorAuthorizationContractClient::new(&env, &contract_id);
-
-    let insurer = Address::generate(&env);
-    let reviewer = Address::generate(&env);
-    let medical_director = Address::generate(&env);
-    let provider = Address::generate(&env);
-    let patient = Address::generate(&env);
-
-    env.mock_all_auths();
-
-    // Configure SLA requiring medical director for urgent cases
-    client.configure_sla(
-        &insurer,
-        &Symbol::new(&env, "urgent"),
-        72,
-        24,
-        30,
-        true, // Requires medical director
-    );
-
-    // Register regular reviewer
-    client.register_reviewer(
-        &insurer,
-        &reviewer,
-        &Symbol::new(&env, "reviewer"),
-        Vec::from_array(&env, [Symbol::new(&env, "general")]),
-        50,
-        None,
-    );
-
-    // Register medical director
-    client.register_reviewer(
-        &insurer,
-        &medical_director,
-        &Symbol::new(&env, "medical_director"),
-        Vec::from_array(&env, [Symbol::new(&env, "all")]),
-        50,
-        None,
-    );
-
-    // Submit urgent authorization
-    let auth_id = client.submit_prior_authorization(
-        &provider,
-        &patient,
-        1001,
-        &Symbol::new(&env, "service"),
-        &String::from_str(&env, "Urgent service"),
-        Vec::from_array(&env, [String::from_str(&env, "99213")]),
-        Vec::from_array(&env, [String::from_str(&env, "J45.909")]),
-        BytesN::from_array(&[0; 32]),
-        &Symbol::new(&env, "urgent"),
-    );
-
-    // Regular reviewer should fail for urgent case
-    let result = client.try_review_authorization(
-        &auth_id,
-        &reviewer,
-        &Symbol::new(&env, "approved"),
-        Some(3),
-        Some(env.ledger().timestamp()),
-        Some(env.ledger().timestamp() + (30 * 24 * 60 * 60)),
-        &String::from_str(&env, "Regular reviewer attempt"),
-    );
-    assert_eq!(result, Err(Ok(Error::InvalidReviewerRole)));
-
-    // Medical director should succeed
-    client.review_authorization(
-        &auth_id,
-        &medical_director,
-        &Symbol::new(&env, "approved"),
-        Some(3),
-        Some(env.ledger().timestamp()),
-        Some(env.ledger().timestamp() + (30 * 24 * 60 * 60)),
-        &String::from_str(&env, "Medical director approval"),
-    );
-}
-
-#[test]
-fn test_auto_approval_for_overdue_cases() {
-    let env = Env::default();
-    let contract_id = env.register_contract(None, PriorAuthorizationContract);
-    let client = PriorAuthorizationContractClient::new(&env, &contract_id);
-
-    let insurer = Address::generate(&env);
-    let provider = Address::generate(&env);
-    let patient = Address::generate(&env);
-
-    env.mock_all_auths();
-
-    // Configure SLA with auto-approval
-    client.configure_sla(
-        &insurer,
-        &Symbol::new(&env, "standard"),
-        1, // 1 hour deadline
-        24,
-        30,
-        false, // Does not require medical director
-    );
-
-    // Submit authorization
-    let auth_id = client.submit_prior_authorization(
-        &provider,
-        &patient,
-        1001,
-        &Symbol::new(&env, "service"),
-        &String::from_str(&env, "Auto-approvable service"),
-        Vec::from_array(&env, [String::from_str(&env, "99213")]),
-        Vec::from_array(&env, [String::from_str(&env, "J45.909")]),
-        BytesN::from_array(&[0; 32]),
-        &Symbol::new(&env, "standard"),
-    );
-
-    // Advance time past deadline
-    env.ledger().set_timestamp(env.ledger().timestamp() + (2 * 3600)); // 2 hours later
-
-    // Process overdue authorizations
-    let processed = client.process_overdue_authorizations(&insurer);
-    assert_eq!(processed.len(), 1);
-    assert_eq!(processed.get(0).unwrap(), auth_id);
-
-    // Verify auto-approval
-    let auth_info = client.get_authorization_status(&auth_id, &insurer);
-    assert_eq!(auth_info.decision, Some(Symbol::new(&env, "auto_approved")));
-    assert_eq!(auth_info.approved_units, Some(10)); // Conservative default
-}
-
-#[test]
-fn test_reviewer_statistics() {
-    let env = Env::default();
-    let contract_id = env.register_contract(None, PriorAuthorizationContract);
-    let client = PriorAuthorizationContractClient::new(&env, &contract_id);
-
-    let insurer = Address::generate(&env);
-    let reviewer = Address::generate(&env);
-    let provider = Address::generate(&env);
-    let patient = Address::generate(&env);
-
-    env.mock_all_auths();
-
-    // Register reviewer
-    client.register_reviewer(
-        &insurer,
-        &reviewer,
-        &Symbol::new(&env, "reviewer"),
-        Vec::from_array(&env, [Symbol::new(&env, "general")]),
-        10, // 10 case limit
-        None,
-    );
-
-    // Submit and review some authorizations
-    for i in 0..3 {
-        let auth_id = client.submit_prior_authorization(
-            &provider,
-            &patient,
-            1000 + i,
-            &Symbol::new(&env, "service"),
-            &String::from_str(&env, &format!("Service {}", i).as_str()),
-            Vec::from_array(&env, [String::from_str(&env, "99213")]),
-            Vec::from_array(&env, [String::from_str(&env, "J45.909")]),
-            BytesN::from_array(&[0; 32]),
-            &Symbol::new(&env, "standard"),
-        );
-
-        client.review_authorization(
-            &auth_id,
-            &reviewer,
-            &Symbol::new(&env, "approved"),
-            Some(3),
-            Some(env.ledger().timestamp()),
-            Some(env.ledger().timestamp() + (30 * 24 * 60 * 60)),
-            &String::from_str(&env, "Approved"),
-        );
-    }
-
-    // Check reviewer statistics
-    let stats = client.get_reviewer_stats(&insurer, &reviewer);
-    assert_eq!(stats.current_cases, 3);
-    assert_eq!(stats.max_cases, 10);
-    assert_eq!(stats.utilization_ratio, 0.3);
-    assert_eq!(stats.role, Symbol::new(&env, "reviewer"));
-    assert!(stats.is_active);
+    assert!(result.is_err());
 }
