@@ -245,6 +245,7 @@ pub enum ContractError {
     InvalidEncryptedEnvelope = 21,
     InvalidPolicyMetadata = 22,
     InvalidPagination = 23,
+    BatchTooLarge = 24,
 }
 
 pub fn validate_cid(cid: &Bytes) -> Result<(), ContractError> {
@@ -407,6 +408,32 @@ fn build_partial_record(record_data: &RecordData, mask: u32) -> PartialRecord {
 
 /// Maximum number of records that may be returned in a single paginated call.
 pub const MAX_PAGE_SIZE: u32 = 50;
+
+/// Maximum number of entries allowed in a single batch registration call.
+pub const MAX_BATCH_SIZE: u32 = 50;
+
+/// Input entry for `batch_register_patients`.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BatchPatientEntry {
+    pub wallet: Address,
+    pub name: String,
+    pub dob: u64,
+    pub encrypted_metadata_ref: EncryptedEnvelopeRef,
+    pub policy: PolicyMetadata,
+}
+
+/// Per-entry outcome returned by batch registration functions.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum BatchEntryStatus {
+    /// Entry registered successfully.
+    Success,
+    /// Entry skipped because the address is already registered.
+    AlreadyExists,
+    /// Entry failed validation (error code carried along for observability).
+    Failed(u32),
+}
 
 /// Return type for `get_medical_records_paged`.
 ///
@@ -768,6 +795,83 @@ impl MedicalRegistry {
             .instance()
             .get(&DataKey::TotalPatients)
             .unwrap_or(0)
+    }
+
+    /// Register multiple patients in one transaction.
+    ///
+    /// Returns a `Vec<BatchEntryStatus>` aligned 1-to-1 with `entries`.
+    /// Already-registered wallets produce `AlreadyExists` (no error, no overwrite).
+    /// Validation failures produce `Failed(error_code)`.
+    /// Enforces `MAX_BATCH_SIZE`; returns `BatchTooLarge` if exceeded.
+    pub fn batch_register_patients(
+        env: Env,
+        entries: Vec<BatchPatientEntry>,
+    ) -> Result<Vec<BatchEntryStatus>, ContractError> {
+        Self::require_not_frozen(&env);
+        if entries.len() > MAX_BATCH_SIZE {
+            return Err(ContractError::BatchTooLarge);
+        }
+
+        let mut results: Vec<BatchEntryStatus> = Vec::new(&env);
+
+        for entry in entries.iter() {
+            // Validate encrypted ref and policy.
+            if validate_encrypted_ref(&entry.encrypted_metadata_ref).is_err() {
+                results.push_back(BatchEntryStatus::Failed(
+                    ContractError::InvalidEncryptedEnvelope as u32,
+                ));
+                continue;
+            }
+            if validate_policy_metadata(&entry.policy).is_err() {
+                results.push_back(BatchEntryStatus::Failed(
+                    ContractError::InvalidPolicyMetadata as u32,
+                ));
+                continue;
+            }
+
+            let key = DataKey::Patient(entry.wallet.clone());
+            if env.storage().persistent().has(&key) {
+                results.push_back(BatchEntryStatus::AlreadyExists);
+                continue;
+            }
+
+            let patient = PatientData {
+                name: entry.name.clone(),
+                dob: entry.dob,
+                encrypted_metadata_ref: entry.encrypted_metadata_ref.clone(),
+                status: PatientStatus::Active,
+                policy: entry.policy.clone(),
+            };
+            env.storage().persistent().set(&key, &patient);
+
+            let total_patients: u64 = env
+                .storage()
+                .instance()
+                .get(&DataKey::TotalPatients)
+                .unwrap_or(0u64);
+            env.storage()
+                .instance()
+                .set(&DataKey::TotalPatients, &(total_patients + 1));
+
+            let mut pat_list: Vec<Address> = env
+                .storage()
+                .persistent()
+                .get(&DataKey::PatientList)
+                .unwrap_or(Vec::new(&env));
+            pat_list.push_back(entry.wallet.clone());
+            env.storage()
+                .persistent()
+                .set(&DataKey::PatientList, &pat_list);
+
+            env.events().publish(
+                (symbol_short!("reg_pat"), entry.wallet.clone()),
+                symbol_short!("success"),
+            );
+
+            results.push_back(BatchEntryStatus::Success);
+        }
+
+        Ok(results)
     }
 
     /// Extend the TTL of all persistent storage entries for a patient.

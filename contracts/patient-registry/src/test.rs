@@ -3957,3 +3957,97 @@ fn test_get_record_history_readable_by_authorized_doctor() {
     let history = client.get_record_history(&record_id, &doctor);
     assert_eq!(history.len(), 2);
 }
+
+
+// ── Batch registration tests (#396) ──────────────────────────────────────────
+
+#[test]
+fn test_batch_register_patients_full_success() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(MedicalRegistry, ());
+    let client = MedicalRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let fee_token = Address::generate(&env);
+    client.initialize(&admin, &treasury, &fee_token);
+
+    let mut entries = Vec::new(&env);
+    for i in 0..3u8 {
+        let wallet = Address::generate(&env);
+        entries.push_back(BatchPatientEntry {
+            wallet,
+            name: String::from_str(&env, "Patient"),
+            dob: 1000u64 + i as u64,
+            encrypted_metadata_ref: encrypted_ref(&env, i + 1),
+            policy: policy(&env),
+        });
+    }
+
+    let results = client.batch_register_patients(&entries);
+    assert_eq!(results.len(), 3);
+    for i in 0..3u32 {
+        assert!(matches!(results.get(i).unwrap(), BatchEntryStatus::Success));
+    }
+    assert_eq!(client.get_total_patients(), 3);
+}
+
+#[test]
+fn test_batch_register_patients_idempotent_on_duplicate() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(MedicalRegistry, ());
+    let client = MedicalRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let fee_token = Address::generate(&env);
+    client.initialize(&admin, &treasury, &fee_token);
+
+    let wallet = Address::generate(&env);
+    let entry = BatchPatientEntry {
+        wallet: wallet.clone(),
+        name: String::from_str(&env, "Alice"),
+        dob: 1000u64,
+        encrypted_metadata_ref: encrypted_ref(&env, 1),
+        policy: policy(&env),
+    };
+
+    let mut entries = Vec::new(&env);
+    entries.push_back(entry.clone());
+    entries.push_back(entry);
+
+    let results = client.batch_register_patients(&entries);
+    assert_eq!(results.len(), 2);
+    assert!(matches!(results.get(0).unwrap(), BatchEntryStatus::Success));
+    assert!(matches!(results.get(1).unwrap(), BatchEntryStatus::AlreadyExists));
+    assert_eq!(client.get_total_patients(), 1);
+}
+
+#[test]
+fn test_batch_register_patients_over_limit_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(MedicalRegistry, ());
+    let client = MedicalRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let treasury = Address::generate(&env);
+    let fee_token = Address::generate(&env);
+    client.initialize(&admin, &treasury, &fee_token);
+
+    let mut entries = Vec::new(&env);
+    for i in 0..51u8 {
+        entries.push_back(BatchPatientEntry {
+            wallet: Address::generate(&env),
+            name: String::from_str(&env, "P"),
+            dob: i as u64,
+            encrypted_metadata_ref: encrypted_ref(&env, (i % 255) + 1),
+            policy: policy(&env),
+        });
+    }
+
+    let result = client.try_batch_register_patients(&entries);
+    assert!(result.is_err());
+}

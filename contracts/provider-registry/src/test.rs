@@ -209,3 +209,84 @@ fn test_get_missing_record_returns_error() {
         .unwrap();
     assert_eq!(err, Error::RecordNotFound);
 }
+
+// ── Batch registration tests (#396) ──────────────────────────────────────────
+
+#[test]
+fn test_batch_register_providers_full_success() {
+    let (env, admin, client) = setup();
+
+    let mut entries = Vec::new(&env);
+    for i in 0..3u8 {
+        entries.push_back(BatchProviderEntry {
+            provider: Address::generate(&env),
+            name: String::from_str(&env, "Dr. Batch"),
+            specialty: String::from_str(&env, "General"),
+            license_number: String::from_str(&env, "LIC-BATCH"),
+            credential_hash: dummy_hash(&env, i + 1),
+            issuer: Address::generate(&env),
+            attestation_hash: dummy_hash(&env, i + 10),
+            expires_at: u64::MAX,
+            revocation_reference: dummy_hash(&env, i + 20),
+        });
+    }
+
+    let results = client.batch_register_providers(&admin, &entries);
+    assert_eq!(results.len(), 3);
+    for i in 0..3u32 {
+        assert!(matches!(results.get(i).unwrap(), BatchEntryStatus::Success));
+    }
+}
+
+#[test]
+fn test_batch_register_providers_idempotent_on_duplicate() {
+    let (env, admin, client) = setup();
+    let provider = Address::generate(&env);
+
+    let entry = BatchProviderEntry {
+        provider: provider.clone(),
+        name: String::from_str(&env, "Dr. Dup"),
+        specialty: String::from_str(&env, "General"),
+        license_number: String::from_str(&env, "LIC-DUP"),
+        credential_hash: dummy_hash(&env, 1),
+        issuer: Address::generate(&env),
+        attestation_hash: dummy_hash(&env, 2),
+        expires_at: u64::MAX,
+        revocation_reference: dummy_hash(&env, 3),
+    };
+
+    let mut entries = Vec::new(&env);
+    entries.push_back(entry.clone());
+    entries.push_back(entry);
+
+    let results = client.batch_register_providers(&admin, &entries);
+    assert_eq!(results.len(), 2);
+    assert!(matches!(results.get(0).unwrap(), BatchEntryStatus::Success));
+    assert!(matches!(results.get(1).unwrap(), BatchEntryStatus::AlreadyExists));
+}
+
+#[test]
+fn test_batch_register_providers_over_limit_fails() {
+    let (env, admin, client) = setup();
+
+    let mut entries = Vec::new(&env);
+    for _ in 0..51 {
+        entries.push_back(BatchProviderEntry {
+            provider: Address::generate(&env),
+            name: String::from_str(&env, "Dr. Over"),
+            specialty: String::from_str(&env, "General"),
+            license_number: String::from_str(&env, "LIC"),
+            credential_hash: dummy_hash(&env, 1),
+            issuer: Address::generate(&env),
+            attestation_hash: dummy_hash(&env, 2),
+            expires_at: u64::MAX,
+            revocation_reference: dummy_hash(&env, 3),
+        });
+    }
+
+    let err = client
+        .try_batch_register_providers(&admin, &entries)
+        .unwrap_err()
+        .unwrap();
+    assert_eq!(err, Error::BatchTooLarge);
+}
