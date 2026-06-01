@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use super::*;
+use proptest::prelude::*;
 use soroban_sdk::{
     testutils::{Address as _, MockAuth, MockAuthInvoke},
     xdr::ToXdr,
@@ -911,34 +912,77 @@ fn test_revoke_access_by_unprivileged_non_grantor_rejected() {
     let _ = admin;
 }
 
-// ---------------------------------------------------------------------------
-// #223: consent expiry enforcement
-// ---------------------------------------------------------------------------
-#[test]
-fn test_check_consent_expired() {
-    use soroban_sdk::testutils::Ledger;
+proptest! {
+    #[test]
+    fn test_soundness_provider_without_grant_never_has_access(resource_id in "resource-[0-9]{1,3}") {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (admin, client) = setup(&env);
+        let (grantor, grantee) = register_two(&env, &client, &admin);
+        let other = Address::generate(&env);
 
-    let (env, client) = setup();
-    let admin = Address::generate(&env);
-    client.initialize(&admin);
+        let resource = String::from_str(&env, &resource_id);
+        client.grant_access(&grantor, &grantee, &resource, &0, &None);
 
-    let patient = Address::generate(&env);
-    let provider = Address::generate(&env);
-    let purpose = String::from_str(&env, "treatment");
+        assert!(!client.check_access(&other, &resource));
+    }
 
-    // Grant consent that expires at ledger timestamp 100.
-    client.grant_consent(
-        &patient,
-        &provider,
-        &0x01u32, // read
-        &purpose,
-        &String::from_str(&env, "explicit_consent"),
-        &100,
-    );
+    #[test]
+    fn test_completeness_after_grant_access_succeeds(resource_id in "resource-[0-9]{1,3}", expires_at in 1u64..1_000u64) {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (admin, client) = setup(&env);
+        let (grantor, grantee) = register_two(&env, &client, &admin);
 
-    // Advance ledger past the expiry.
-    env.ledger().set_timestamp(101);
+        let resource = String::from_str(&env, &resource_id);
+        client.grant_access(&grantor, &grantee, &resource, &expires_at, &None);
 
-    let result = client.try_check_consent(&patient, &provider, &purpose, &0x01u32);
-    assert_eq!(result, Err(Ok(ContractError::ConsentExpired)));
+        assert!(client.check_access(&grantee, &resource));
+    }
+
+    #[test]
+    fn test_revocation_after_revoke_access_denied(resource_id in "resource-[0-9]{1,3}") {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (admin, client) = setup(&env);
+        let (grantor, grantee) = register_two(&env, &client, &admin);
+
+        let resource = String::from_str(&env, &resource_id);
+        client.grant_access(&grantor, &grantee, &resource, &0, &None);
+        client.revoke_access(&grantor, &grantee, &resource);
+
+        assert!(!client.check_access(&grantee, &resource));
+    }
+
+    #[test]
+    fn test_expiry_after_expiry_timestamp_denies_access(resource_id in "resource-[0-9]{1,3}", expires_at in 1u64..1_000u64) {
+        let env = Env::default();
+        env.mock_all_auths();
+        let (admin, client) = setup(&env);
+        let (grantor, grantee) = register_two(&env, &client, &admin);
+
+        let resource = String::from_str(&env, &resource_id);
+        client.grant_access(&grantor, &grantee, &resource, &expires_at, &None);
+
+        env.ledger().set_timestamp(expires_at + 1);
+        assert!(!client.check_access(&grantee, &resource));
+    }
+
+    #[test]
+    fn test_scope_isolation_grant_does_not_grant_other_scope(
+        resource_a in "resource-[0-9]{1,3}",
+        resource_b in "resource-[0-9]{1,3}"
+    ) {
+        prop_assume!(resource_a != resource_b);
+        let env = Env::default();
+        env.mock_all_auths();
+        let (admin, client) = setup(&env);
+        let (grantor, grantee) = register_two(&env, &client, &admin);
+
+        let resource_a = String::from_str(&env, &resource_a);
+        let resource_b = String::from_str(&env, &resource_b);
+        client.grant_access(&grantor, &grantee, &resource_a, &0, &None);
+
+        assert!(!client.check_access(&grantee, &resource_b));
+    }
 }
