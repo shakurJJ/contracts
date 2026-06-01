@@ -833,3 +833,95 @@ fn test_revoke_access_by_unprivileged_non_grantor_rejected() {
     // Silence unused-variable warning for admin.
     let _ = admin;
 }
+
+// ── deregister_patient tests ──────────────────────────────────────────────────
+
+#[test]
+fn test_deregister_patient_clears_entity_and_access_list() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let patient = Address::generate(&env);
+
+    client.initialize(&admin);
+    client.register_entity(
+        &patient,
+        &EntityType::Patient,
+        &String::from_str(&env, "Alice"),
+        &String::from_str(&env, ""),
+    );
+
+    // Entity exists before deregistration
+    assert!(client.get_entity(&patient).is_ok());
+
+    client.deregister_patient(&patient);
+
+    // Entity removed
+    assert!(client.try_get_entity(&patient).is_err());
+}
+
+#[test]
+fn test_deregister_patient_clears_consents() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let patient = Address::generate(&env);
+    let grantee = Address::generate(&env);
+
+    client.initialize(&admin);
+    client.register_entity(
+        &patient,
+        &EntityType::Patient,
+        &String::from_str(&env, "Bob"),
+        &String::from_str(&env, ""),
+    );
+
+    client.grant_consent(
+        &patient,
+        &grantee,
+        &1u32,
+        &String::from_str(&env, "treatment"),
+        &String::from_str(&env, "explicit_consent"),
+        &0u64,
+    );
+
+    // Consent exists
+    assert!(client
+        .get_consent(&patient, &grantee, &String::from_str(&env, "treatment"))
+        .is_ok());
+
+    client.deregister_patient(&patient);
+
+    // Consent removed
+    assert!(client
+        .try_get_consent(&patient, &grantee, &String::from_str(&env, "treatment"))
+        .is_err());
+}
+
+#[test]
+fn test_deregister_patient_non_admin_rejected() {
+    let (env, client) = setup();
+    let admin = Address::generate(&env);
+    let patient = Address::generate(&env);
+    let attacker = Address::generate(&env);
+
+    client.initialize(&admin);
+    client.register_entity(
+        &patient,
+        &EntityType::Patient,
+        &String::from_str(&env, "Carol"),
+        &String::from_str(&env, ""),
+    );
+
+    let result = client
+        .mock_auths(&[soroban_sdk::testutils::MockAuth {
+            address: &attacker,
+            invoke: &soroban_sdk::testutils::MockAuthInvoke {
+                contract: &client.address,
+                fn_name: "deregister_patient",
+                args: (&patient,).into_val(&env),
+                sub_invokes: &[],
+            },
+        }])
+        .try_deregister_patient(&patient);
+
+    assert!(result.is_err());
+}
