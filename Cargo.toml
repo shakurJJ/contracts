@@ -36,7 +36,7 @@ members = [
   "contracts/hai-tracking",
   "contracts/medical-device-tracking",
   "contracts/provider-registry",
-  "contracts/scholarship-fund",
+  "contracts/governance-voting",
   "contracts/multisig-governance",
   "contracts/upgrade-governance",
   "contracts/zk-eligibility",
