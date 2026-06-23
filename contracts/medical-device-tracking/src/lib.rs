@@ -6,7 +6,7 @@ mod types;
 
 use soroban_sdk::{contract, contractimpl, Address, BytesN, Env, String, Symbol, Vec};
 use types::{
-    DataKey, DeviceRecord, DmePrescription, Error, ImplantRecord, MaintenanceRecord,
+    DataKey, DeviceExtras, DeviceRecord, DmePrescription, Error, ImplantRecord, MaintenanceRecord,
     PerformanceReport, RecallInfo, WarrantyRecord,
 };
 
@@ -38,8 +38,7 @@ impl MedicalDeviceRegistry {
         manufacturing_date: u64,
         expiration_date: Option<u64>,
         device_specs_hash: BytesN<32>,
-        warranty_expiration_date: Option<u64>,
-        maintenance_interval_days: Option<u64>,
+        extras: DeviceExtras,
     ) -> Result<u64, Error> {
         manufacturer_id.require_auth();
 
@@ -53,11 +52,12 @@ impl MedicalDeviceRegistry {
             .instance()
             .set(&DataKey::DeviceCounter, &new_id);
 
-        let next_scheduled_maintenance = if let Some(interval) = maintenance_interval_days {
-            Some(manufacturing_date + interval * 86400)
-        } else {
-            None
-        };
+        let next_scheduled_maintenance =
+            if let Some(interval) = extras.maintenance_interval_days {
+                Some(manufacturing_date + interval * 86400)
+            } else {
+                None
+            };
 
         let device = DeviceRecord {
             device_id: new_id,
@@ -70,9 +70,9 @@ impl MedicalDeviceRegistry {
             manufacturing_date,
             expiration_date,
             device_specs_hash,
-            warranty_expiration_date,
+            warranty_expiration_date: extras.warranty_expiration_date,
             next_scheduled_maintenance,
-            maintenance_interval_days,
+            maintenance_interval_days: extras.maintenance_interval_days,
         };
         env.storage()
             .persistent()
@@ -711,7 +711,7 @@ impl MedicalDeviceRegistry {
             if !warranty_valid {
                 // Also check active warranties
                 let has_active_warranty =
-                    Self::check_warranty_status(&env, device_id, current_time).unwrap_or(false);
+                    Self::check_warranty_status(env.clone(), device_id, current_time).unwrap_or(false);
                 if !has_active_warranty {
                     out_of_warranty.push_back(device_id);
                 }

@@ -246,9 +246,9 @@ pub enum ContractError {
     InvalidPolicyMetadata = 22,
     InvalidPagination = 23,
     BatchTooLarge = 24,
-    RecordNotFound = 24,
-    NoHistoryFound = 25,
-    InvalidAddress = 26,
+    RecordNotFound = 25,
+    NoHistoryFound = 26,
+    InvalidAddress = 27,
 }
 
 pub fn validate_cid(cid: &Bytes) -> Result<(), ContractError> {

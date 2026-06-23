@@ -39,6 +39,13 @@ pub enum Error {
 
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DeviceExtras {
+    pub warranty_expiration_date: Option<u64>,
+    pub maintenance_interval_days: Option<u64>,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DeviceRecord {
     pub device_id: u64,
     pub device_udi: String,

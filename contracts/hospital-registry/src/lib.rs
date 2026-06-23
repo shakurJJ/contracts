@@ -26,6 +26,7 @@ pub enum ContractError {
     /// An empty vector was passed for a field that previously had values
     EmptyFieldUpdate = 6,
     InvalidAddress = 7,
+    ConfigLimitExceeded = 8,
 }
 
 #[contracttype]

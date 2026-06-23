@@ -24,6 +24,7 @@ pub enum Error {
     NotAProvider       = 4,
     RecordNotFound     = 5,
     BatchTooLarge      = 6,
+    InvalidAddress     = 7,
 }
 
 /// Input entry for `batch_register_providers`.
@@ -46,10 +47,10 @@ pub struct BatchProviderEntry {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum BatchEntryStatus {
     /// Entry registered successfully.
-    Success,
+    Success       = 1,
     /// Entry skipped because the address is already registered.
-    AlreadyExists,
-    InvalidAddress     = 6,
+    AlreadyExists = 2,
+    InvalidAddress = 6,
 }
 
 #[contracttype]

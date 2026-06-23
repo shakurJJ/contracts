@@ -31,6 +31,7 @@ fn register_device_helper(
         &1690000000u64,
         &None,
         &dummy_hash(env),
+        &DeviceExtras { warranty_expiration_date: None, maintenance_interval_days: None },
     )
 }
 
@@ -67,6 +68,7 @@ fn test_register_device_with_expiration() {
         &1690000000u64,
         &Some(1800000000u64),
         &dummy_hash(&env),
+        &DeviceExtras { warranty_expiration_date: None, maintenance_interval_days: None },
     );
     assert_eq!(id, 1);
 }

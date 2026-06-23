@@ -81,9 +81,9 @@ pub enum Error {
     /// bypass_allergy_check requires admin role
     AllergyBypassRequiresAdmin = 26,
     /// Prescription has already been dispensed or transferred, cannot be recalled
-    CannotRecallDispensed = 25,
+    CannotRecallDispensed = 27,
     /// Recall reason is required for documentation
-    MissingRecallReason = 26,
+    MissingRecallReason = 28,
 }
 
 #[contracttype]
@@ -184,6 +184,9 @@ pub enum DataKey {
     Admin,
     /// If true, allergy interactions block prescription issuance; if false, only alert.
     AllergyStrictMode,
+    RecallCounter,
+    RecallRecord(u64),
+    PrescriptionRecall(u64),
 }
 
 #[contracttype]

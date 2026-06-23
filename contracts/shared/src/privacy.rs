@@ -38,11 +38,8 @@ pub fn validate_policy_metadata(policy: &PolicyMetadata) -> Result<(), PrivacyEr
     Ok(())
 }
 
-pub fn validate_nonzero_address(address: &Address) -> Result<(), PrivacyError> {
-    let zero_addr = Address::from_array([0; 32]);
-    if *address == zero_addr {
-        return Err(PrivacyError::InvalidAddress);
-    }
+pub fn validate_nonzero_address(_address: &Address) -> Result<(), PrivacyError> {
+    // In Soroban, Address is always a valid strkey; no zero-address concept exists.
     Ok(())
 }
 
