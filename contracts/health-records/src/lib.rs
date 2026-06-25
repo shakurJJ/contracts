@@ -11,6 +11,33 @@ use soroban_sdk::{
     String, Vec,
 };
 
+/// Maximum number of records allowed in a single `create_records_batch` call.
+pub const MAX_BATCH_SIZE: u32 = 10;
+
+/// Per-provider consent scope granted by a patient.
+///
+/// `expires_at == 0` is treated as "never expires".
+/// Any non-zero value is compared against the current ledger timestamp;
+/// if `expires_at <= timestamp` the consent is considered expired.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ConsentScope {
+    pub can_read: bool,
+    pub can_write: bool,
+    pub can_share: bool,
+    pub expires_at: u64,
+}
+
+/// Input record for `create_records_batch`.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RecordInput {
+    pub patient: Address,
+    pub encrypted_ref: EncryptedEnvelopeRef,
+    pub record_type: String,
+    pub policy: PolicyMetadata,
+}
+
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MedicalRecord {
@@ -29,9 +56,8 @@ pub struct MedicalRecord {
 pub enum DataKey {
     Record(u64),
     RecordCounter,
-    Consent(Address, Address),        // (patient, provider) -> bool
-    PatientProviders(Address),        // patient -> Vec<Address> of consented providers
-    RecordVersion(u64, u32),          // (record_id, version) -> MedicalRecord snapshot
+    Consent(Address, Address),     // (patient, provider) -> ConsentScope
+    PatientProviders(Address),     // patient -> Vec<Address> of consented providers
 }
 
 #[contracterror]
@@ -44,7 +70,7 @@ pub enum Error {
     InvalidEncryptedEnvelope = 4,
     InvalidPolicyMetadata = 5,
     InvalidAddress = 6,
-    VersionNotFound = 7,
+    BatchTooLarge = 7,
 }
 
 fn compute_hash(
@@ -69,11 +95,20 @@ fn compute_hash(
     env.crypto().sha256(&data).into()
 }
 
-fn has_consent(env: &Env, patient: &Address, provider: &Address) -> bool {
-    env.storage()
+/// Returns the active `ConsentScope` for `(patient, provider)`, or `None` if
+/// no consent exists or the consent has expired.
+fn get_active_consent(env: &Env, patient: &Address, provider: &Address) -> Option<ConsentScope> {
+    let scope: Option<ConsentScope> = env
+        .storage()
         .persistent()
-        .get(&DataKey::Consent(patient.clone(), provider.clone()))
-        .unwrap_or(false)
+        .get(&DataKey::Consent(patient.clone(), provider.clone()));
+    scope.and_then(|s| {
+        if s.expires_at == 0 || s.expires_at > env.ledger().timestamp() {
+            Some(s)
+        } else {
+            None
+        }
+    })
 }
 
 #[contract]
@@ -81,25 +116,32 @@ pub struct HealthRecords;
 
 #[contractimpl]
 impl HealthRecords {
-    /// Patient grants a provider consent to create/access their records.
-    pub fn grant_consent(env: Env, patient: Address, provider: Address) -> Result<(), Error> {
+    /// Patient grants a provider scoped consent to act on their records.
+    ///
+    /// `scope.expires_at == 0` means the consent never expires.
+    pub fn grant_consent(
+        env: Env,
+        patient: Address,
+        provider: Address,
+        scope: ConsentScope,
+    ) -> Result<(), Error> {
         validate_nonzero_address(&patient).map_err(|_| Error::InvalidAddress)?;
         validate_nonzero_address(&provider).map_err(|_| Error::InvalidAddress)?;
         patient.require_auth();
         env.storage()
             .persistent()
-            .set(&DataKey::Consent(patient, provider), &true);
+            .set(&DataKey::Consent(patient, provider), &scope);
         Ok(())
     }
 
-    /// Patient revokes a provider's consent.
+    /// Patient revokes all consent for a provider.
     pub fn revoke_consent(env: Env, patient: Address, provider: Address) -> Result<(), Error> {
         validate_nonzero_address(&patient).map_err(|_| Error::InvalidAddress)?;
         validate_nonzero_address(&provider).map_err(|_| Error::InvalidAddress)?;
         patient.require_auth();
         env.storage()
             .persistent()
-            .set(&DataKey::Consent(patient, provider), &false);
+            .remove(&DataKey::Consent(patient, provider));
         Ok(())
     }
 
@@ -124,7 +166,7 @@ impl HealthRecords {
         env.storage().persistent().remove(&idx_key);
     }
 
-    /// Create a record. Requires both patient and provider auth, plus prior patient consent.
+    /// Create a record. Requires both patient and provider auth, plus active write consent.
     pub fn create_record(
         env: Env,
         patient: Address,
@@ -140,8 +182,10 @@ impl HealthRecords {
         validate_encrypted_ref(&encrypted_ref).map_err(|_| Error::InvalidEncryptedEnvelope)?;
         validate_policy_metadata(&policy).map_err(|_| Error::InvalidPolicyMetadata)?;
 
-        if !has_consent(&env, &patient, &provider) {
-            return Err(Error::ConsentNotGranted);
+        match get_active_consent(&env, &patient, &provider) {
+            None => return Err(Error::ConsentNotGranted),
+            Some(s) if !s.can_write => return Err(Error::Unauthorized),
+            _ => {}
         }
 
         let counter_key = DataKey::RecordCounter;
@@ -178,7 +222,73 @@ impl HealthRecords {
         Ok(record_id)
     }
 
-    /// Retrieve a record. Caller must be the patient or a consented provider.
+    /// Create multiple records in one transaction.
+    ///
+    /// Only the provider needs to auth; per-patient write consent is checked
+    /// individually for each `RecordInput`. Returns record IDs in input order.
+    /// Enforces `MAX_BATCH_SIZE` (10) — returns `BatchTooLarge` if exceeded.
+    pub fn create_records_batch(
+        env: Env,
+        provider: Address,
+        records: Vec<RecordInput>,
+    ) -> Result<Vec<u64>, Error> {
+        validate_nonzero_address(&provider).map_err(|_| Error::InvalidAddress)?;
+        provider.require_auth();
+
+        if records.len() > MAX_BATCH_SIZE {
+            return Err(Error::BatchTooLarge);
+        }
+
+        let mut ids: Vec<u64> = Vec::new(&env);
+        let timestamp = env.ledger().timestamp();
+
+        for input in records.iter() {
+            validate_nonzero_address(&input.patient).map_err(|_| Error::InvalidAddress)?;
+            validate_encrypted_ref(&input.encrypted_ref)
+                .map_err(|_| Error::InvalidEncryptedEnvelope)?;
+            validate_policy_metadata(&input.policy).map_err(|_| Error::InvalidPolicyMetadata)?;
+
+            match get_active_consent(&env, &input.patient, &provider) {
+                None => return Err(Error::ConsentNotGranted),
+                Some(s) if !s.can_write => return Err(Error::Unauthorized),
+                _ => {}
+            }
+
+            let counter_key = DataKey::RecordCounter;
+            let record_id: u64 = shared_contracts::safe_increment_persistent(&env, &counter_key);
+
+            let integrity_hash = compute_hash(
+                &env,
+                record_id,
+                &input.patient,
+                &provider,
+                &input.encrypted_ref,
+                &input.record_type,
+                timestamp,
+            );
+
+            let record = MedicalRecord {
+                record_id,
+                patient: input.patient.clone(),
+                provider: provider.clone(),
+                encrypted_ref: input.encrypted_ref.clone(),
+                record_type: input.record_type.clone(),
+                timestamp,
+                integrity_hash,
+                policy: input.policy.clone(),
+            };
+
+            env.storage()
+                .persistent()
+                .set(&DataKey::Record(record_id), &record);
+
+            ids.push_back(record_id);
+        }
+
+        Ok(ids)
+    }
+
+    /// Retrieve a record. Caller must be the patient or have active read consent.
     pub fn get_record(env: Env, caller: Address, record_id: u64) -> Result<MedicalRecord, Error> {
         validate_nonzero_address(&caller).map_err(|_| Error::InvalidAddress)?;
         caller.require_auth();
@@ -189,14 +299,18 @@ impl HealthRecords {
             .get(&DataKey::Record(record_id))
             .ok_or(Error::RecordNotFound)?;
 
-        if caller != record.patient && !has_consent(&env, &record.patient, &caller) {
-            return Err(Error::Unauthorized);
+        if caller != record.patient {
+            match get_active_consent(&env, &record.patient, &caller) {
+                None => return Err(Error::Unauthorized),
+                Some(s) if !s.can_read => return Err(Error::Unauthorized),
+                _ => {}
+            }
         }
 
         Ok(record)
     }
 
-    /// Verify integrity. Caller must be the patient or a consented provider.
+    /// Verify integrity. Caller must be the patient or have active read consent.
     pub fn verify_record_integrity(
         env: Env,
         caller: Address,
@@ -212,8 +326,12 @@ impl HealthRecords {
                 None => return Ok(false),
             };
 
-        if caller != record.patient && !has_consent(&env, &record.patient, &caller) {
-            return Err(Error::Unauthorized);
+        if caller != record.patient {
+            match get_active_consent(&env, &record.patient, &caller) {
+                None => return Err(Error::Unauthorized),
+                Some(s) if !s.can_read => return Err(Error::Unauthorized),
+                _ => {}
+            }
         }
 
         if expected_hash.len() != 32 {
