@@ -1728,6 +1728,50 @@ impl MedicalRegistry {
         merkle::verify_membership(&env, record_id, &proof, &root)
     }
 
+    /// Generate a Merkle membership proof for the record at `record_index`
+    /// (0-based position within `PatientRecordIds`, insertion order -- not
+    /// a record ID) in `patient`'s record tree.
+    ///
+    /// The returned proof, together with `hash_leaf(env, record_id)`, can be
+    /// passed to `verify_record_membership`; or pass the leaf hash directly
+    /// to `verify_record_proof`. Returns `ContractError::RecordNotFound` if
+    /// `record_index` is out of bounds.
+    pub fn get_record_proof(
+        env: Env,
+        patient: Address,
+        record_index: u32,
+    ) -> Result<Vec<BytesN<32>>, ContractError> {
+        let ids_key = DataKey::PatientRecordIds(patient);
+        let record_ids: Vec<u64> = env
+            .storage()
+            .persistent()
+            .get(&ids_key)
+            .unwrap_or(Vec::new(&env));
+
+        if record_index >= record_ids.len() {
+            return Err(ContractError::RecordNotFound);
+        }
+
+        Ok(merkle::generate_proof(&env, &record_ids, record_index))
+    }
+
+    /// Returns true iff `proof` is a valid Merkle membership proof for
+    /// `leaf_hash` under this patient's root.
+    ///
+    /// Like `verify_record_membership` but takes the leaf hash directly
+    /// rather than a raw record ID -- pair with `get_record_proof` and
+    /// `merkle::hash_leaf` when the caller already has (or only needs) the
+    /// hash.
+    pub fn verify_record_proof(
+        env: Env,
+        patient: Address,
+        leaf_hash: BytesN<32>,
+        proof: Vec<BytesN<32>>,
+    ) -> bool {
+        let root = Self::get_merkle_root(env.clone(), patient);
+        merkle::verify_leaf_membership(&env, leaf_hash, &proof, &root)
+    }
+
     /// Returns all records for `patient` whose `record_type` matches the given symbol.
     /// Access control: caller must be the patient, their guardian, or an authorized doctor.
     /// Returns an empty vec (not an error) when no records match.

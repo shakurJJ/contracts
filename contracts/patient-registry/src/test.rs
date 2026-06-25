@@ -4221,3 +4221,135 @@ fn test_grant_access_allows_registered_provider() {
     let authorized = client.get_authorized_doctors(&patient);
     assert_eq!(authorized.len(), 1);
 }
+
+// ── #469: Merkle-proof API (get_record_proof / verify_record_proof) ────────
+
+/// Registers a patient, authorizes `doctor`, and adds `n` medical records.
+/// Returns `(client, patient, record_ids)` in insertion order, matching
+/// `PatientRecordIds` / the Merkle leaf order.
+fn setup_patient_with_records(
+    env: &Env,
+    n: u32,
+) -> (MedicalRegistryClient<'static>, Address, Address, Vec<u64>) {
+    let contract_id = env.register(MedicalRegistry, ());
+    let client = MedicalRegistryClient::new(env, &contract_id);
+
+    let admin = Address::generate(env);
+    let treasury = Address::generate(env);
+    let fee_token = Address::generate(env);
+    let patient = Address::generate(env);
+    let doctor = Address::generate(env);
+    let v1 = BytesN::from_array(env, &[1u8; 32]);
+
+    env.mock_all_auths();
+
+    client.initialize(&admin, &treasury, &fee_token);
+    client.register_patient(
+        &patient,
+        &String::from_str(env, "Test Patient"),
+        &631152000,
+        &encrypted_ref(env, 1),
+        &policy(env),
+    );
+    client.publish_consent_version(&v1);
+    client.acknowledge_consent(&patient, &patient, &v1);
+    client.grant_access(&patient, &patient, &doctor);
+
+    let mut record_ids: Vec<u64> = Vec::new(env);
+    for i in 0..n {
+        let id = client.add_medical_record(
+            &patient,
+            &doctor,
+            &encrypted_ref(env, (i + 20) as u8),
+            &Symbol::new(env, "LAB"),
+            &policy(env),
+        );
+        record_ids.push_back(id);
+    }
+
+    (client, patient, doctor, record_ids)
+}
+
+#[test]
+fn test_get_record_proof_roundtrip_verifies_true() {
+    let env = Env::default();
+    // Five records: exercises an odd-length layer (self-pairing) at the leaf level.
+    let (client, patient, _doctor, record_ids) = setup_patient_with_records(&env, 5);
+
+    for (index, record_id) in record_ids.iter().enumerate() {
+        let proof = client.get_record_proof(&patient, &(index as u32));
+
+        // Verify via the existing record-id-based entry point.
+        assert!(client.verify_record_membership(&patient, &record_id, &proof));
+
+        // Verify via the new leaf-hash-based entry point.
+        let leaf_hash = merkle::hash_leaf(&env, record_id);
+        assert!(client.verify_record_proof(&patient, &leaf_hash, &proof));
+    }
+}
+
+#[test]
+fn test_get_record_proof_out_of_bounds_index_fails() {
+    let env = Env::default();
+    let (client, patient, _doctor, record_ids) = setup_patient_with_records(&env, 3);
+
+    let result = client.try_get_record_proof(&patient, &(record_ids.len()));
+    assert_eq!(result, Err(Ok(ContractError::RecordNotFound)));
+}
+
+#[test]
+fn test_verify_record_proof_fails_when_leaf_hash_altered() {
+    let env = Env::default();
+    let (client, patient, _doctor, record_ids) = setup_patient_with_records(&env, 4);
+
+    let target_index = 1u32;
+    let target_id = record_ids.get(target_index).unwrap();
+    let proof = client.get_record_proof(&patient, &target_index);
+
+    // Sanity: the real leaf hash verifies.
+    let real_leaf_hash = merkle::hash_leaf(&env, target_id);
+    assert!(client.verify_record_proof(&patient, &real_leaf_hash, &proof));
+
+    // A leaf hash for a *different* record (simulating an altered/substituted
+    // record hash) must NOT verify against the same proof.
+    let other_id = record_ids.get(0).unwrap();
+    assert_ne!(other_id, target_id);
+    let altered_leaf_hash = merkle::hash_leaf(&env, other_id);
+    assert!(!client.verify_record_proof(&patient, &altered_leaf_hash, &proof));
+}
+
+#[test]
+fn test_verify_record_proof_fails_with_tampered_sibling() {
+    let env = Env::default();
+    let (client, patient, _doctor, record_ids) = setup_patient_with_records(&env, 4);
+
+    let target_index = 2u32;
+    let target_id = record_ids.get(target_index).unwrap();
+    let proof = client.get_record_proof(&patient, &target_index);
+    assert!(!proof.is_empty());
+
+    // Rebuild the proof with its first sibling hash's first byte flipped.
+    let mut tampered_proof: Vec<BytesN<32>> = Vec::new(&env);
+    for (i, sibling) in proof.iter().enumerate() {
+        if i == 0 {
+            let mut bytes = sibling.to_array();
+            bytes[0] ^= 0xFF;
+            tampered_proof.push_back(BytesN::from_array(&env, &bytes));
+        } else {
+            tampered_proof.push_back(sibling);
+        }
+    }
+
+    let leaf_hash = merkle::hash_leaf(&env, target_id);
+    assert!(!client.verify_record_proof(&patient, &leaf_hash, &tampered_proof));
+}
+
+#[test]
+fn test_get_record_proof_single_record_tree() {
+    let env = Env::default();
+    let (client, patient, _doctor, record_ids) = setup_patient_with_records(&env, 1);
+
+    let record_id = record_ids.get(0).unwrap();
+    let proof = client.get_record_proof(&patient, &0u32);
+    assert!(client.verify_record_membership(&patient, &record_id, &proof));
+}
