@@ -1249,6 +1249,7 @@ name = "patient-registry"
 version = "0.0.0"
 dependencies = [
  "proptest",
+ "provider-registry",
  "shared",
  "soroban-sdk",
  "ttl-config",

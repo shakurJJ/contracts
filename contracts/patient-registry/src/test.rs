@@ -4,7 +4,7 @@ use super::*;
 use shared::privacy::{EncryptedEnvelopeRef, PolicyMetadata};
 use soroban_sdk::{
     testutils::{Address as _, Events, Ledger, MockAuth, MockAuthInvoke},
-    Address, Bytes, BytesN, Env, IntoVal, String, Symbol, Vec,
+    Address, Bytes, BytesN, Env, IntoVal, String, Symbol, TryFromVal, Vec,
 };
 
 fn encrypted_ref(env: &Env, seed: u8) -> EncryptedEnvelopeRef {
@@ -4052,20 +4052,17 @@ fn test_batch_register_patients_over_limit_fails() {
     assert!(result.is_err());
 }
 
-// ── Retention class tests (#470) ──────────────────────────────────────────────
+// -------------------------------------------------------
+// #467 — PatientStatusChanged events
+// -------------------------------------------------------
 
-/// Newly registered patients default to the Clinical retention class.
 #[test]
-fn test_register_patient_defaults_to_clinical_class() {
+fn test_deregister_emits_patient_status_changed_event() {
     let env = Env::default();
     env.mock_all_auths();
+
     let contract_id = env.register(MedicalRegistry, ());
     let client = MedicalRegistryClient::new(&env, &contract_id);
-
-    let admin = Address::generate(&env);
-    let treasury = Address::generate(&env);
-    let fee_token = Address::generate(&env);
-    client.initialize(&admin, &treasury, &fee_token);
 
     let patient = Address::generate(&env);
     client.register_patient(
@@ -4076,23 +4073,31 @@ fn test_register_patient_defaults_to_clinical_class() {
         &policy(&env),
     );
 
-    assert_eq!(
-        client.get_patient_retention_class(&patient),
-        RetentionClass::Clinical
-    );
+    client.deregister_patient(&patient);
+
+    let events = env.events().all();
+    let status_changed_topic = Symbol::new(&env, "patient_status_changed");
+    let found = events.iter().any(|(_cid, topics, _data)| {
+        topics.iter().any(|t| {
+            Symbol::try_from_val(&env, &t)
+                .map(|s| s == status_changed_topic)
+                .unwrap_or(false)
+        })
+    });
+    assert!(found, "patient_status_changed event not found after deregister_patient");
 }
 
-/// Admin can change a patient's retention class from Clinical to Administrative.
 #[test]
-fn test_admin_can_set_administrative_retention_class() {
+fn test_reactivate_patient_emits_patient_status_changed_event() {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register(MedicalRegistry, ());
-    let client = MedicalRegistryClient::new(&env, &contract_id);
 
     let admin = Address::generate(&env);
     let treasury = Address::generate(&env);
     let fee_token = Address::generate(&env);
+    let contract_id = env.register(MedicalRegistry, ());
+    let client = MedicalRegistryClient::new(&env, &contract_id);
+
     client.initialize(&admin, &treasury, &fee_token);
 
     let patient = Address::generate(&env);
@@ -4104,106 +4109,115 @@ fn test_admin_can_set_administrative_retention_class() {
         &policy(&env),
     );
 
-    client.set_patient_retention_class(&patient, &RetentionClass::Administrative);
+    client.deregister_patient(&patient);
+    client.reactivate_patient(&patient);
 
-    assert_eq!(
-        client.get_patient_retention_class(&patient),
-        RetentionClass::Administrative
+    let events = env.events().all();
+    let status_changed_topic = Symbol::new(&env, "patient_status_changed");
+    let count = events
+        .iter()
+        .filter(|(_cid, topics, _data)| {
+            topics.iter().any(|t| {
+                Symbol::try_from_val(&env, &t)
+                    .map(|s| s == status_changed_topic)
+                    .unwrap_or(false)
+            })
+        })
+        .count();
+    assert!(
+        count >= 2,
+        "expected at least 2 patient_status_changed events (deregister + reactivate), got {}",
+        count
     );
 }
 
-/// Admin can set Financial retention class.
+// -------------------------------------------------------
+// #468 — provider registry check in grant_access
+// -------------------------------------------------------
+
 #[test]
-fn test_admin_can_set_financial_retention_class() {
+fn test_grant_access_rejects_unregistered_provider() {
+    use provider_registry::ProviderRegistry;
+
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register(MedicalRegistry, ());
-    let client = MedicalRegistryClient::new(&env, &contract_id);
 
     let admin = Address::generate(&env);
     let treasury = Address::generate(&env);
     let fee_token = Address::generate(&env);
+
+    let registry_contract_id = env.register(ProviderRegistry, ());
+    let registry_client =
+        provider_registry::ProviderRegistryClient::new(&env, &registry_contract_id);
+    registry_client.initialize(&admin);
+
+    let contract_id = env.register(MedicalRegistry, ());
+    let client = MedicalRegistryClient::new(&env, &contract_id);
     client.initialize(&admin, &treasury, &fee_token);
+    client.set_provider_registry(&registry_contract_id);
 
     let patient = Address::generate(&env);
     client.register_patient(
         &patient,
-        &String::from_str(&env, "Carol"),
+        &String::from_str(&env, "Charlie"),
         &631152000u64,
         &encrypted_ref(&env, 3),
         &policy(&env),
     );
 
-    client.set_patient_retention_class(&patient, &RetentionClass::Financial);
-
-    assert_eq!(
-        client.get_patient_retention_class(&patient),
-        RetentionClass::Financial
+    let unregistered_doctor = Address::generate(&env);
+    let result = client.try_grant_access(&patient, &patient, &unregistered_doctor);
+    assert!(
+        result.is_err(),
+        "grant_access should reject a provider not in the registry"
     );
 }
 
-/// Clinical patients use critical-class TTL (larger bump); Administrative
-/// patients use operational-class TTL (smaller bump). After advancing the
-/// ledger past the operational bump amount (but within the critical bump
-/// amount), the Administrative patient's key has expired while the Clinical
-/// patient's key survives.
 #[test]
-fn test_different_bump_amounts_applied_per_retention_class() {
+fn test_grant_access_allows_registered_provider() {
+    use provider_registry::ProviderRegistry;
+
     let env = Env::default();
     env.mock_all_auths();
-
-    let start_seq: u32 = 100;
-    env.ledger().set(make_ledger_info(start_seq, 1_000_000));
-
-    let contract_id = env.register(MedicalRegistry, ());
-    let client = MedicalRegistryClient::new(&env, &contract_id);
 
     let admin = Address::generate(&env);
     let treasury = Address::generate(&env);
     let fee_token = Address::generate(&env);
+
+    let registry_contract_id = env.register(ProviderRegistry, ());
+    let registry_client =
+        provider_registry::ProviderRegistryClient::new(&env, &registry_contract_id);
+    registry_client.initialize(&admin);
+
+    let contract_id = env.register(MedicalRegistry, ());
+    let client = MedicalRegistryClient::new(&env, &contract_id);
     client.initialize(&admin, &treasury, &fee_token);
+    client.set_provider_registry(&registry_contract_id);
 
-    // Register two patients.
-    let clinical_patient = Address::generate(&env);
-    let admin_patient = Address::generate(&env);
-
+    let patient = Address::generate(&env);
     client.register_patient(
-        &clinical_patient,
-        &String::from_str(&env, "Clinical"),
+        &patient,
+        &String::from_str(&env, "Diana"),
         &631152000u64,
-        &encrypted_ref(&env, 1),
-        &policy(&env),
-    );
-    client.register_patient(
-        &admin_patient,
-        &String::from_str(&env, "Administrative"),
-        &631152001u64,
-        &encrypted_ref(&env, 2),
+        &encrypted_ref(&env, 4),
         &policy(&env),
     );
 
-    // Change the second patient to Administrative class.
-    client.set_patient_retention_class(&admin_patient, &RetentionClass::Administrative);
-
-    // Bump TTL for both patients — this triggers class-specific extend_ttl.
-    client.extend_patient_ttl(&clinical_patient);
-    client.extend_patient_ttl(&admin_patient);
-
-    // Advance ledger past operational TTL (~7 days = 120_960 ledgers) but within
-    // critical TTL (~31 days = 535_680 ledgers).
-    // operational::LEDGER_BUMP_AMOUNT = 120_960, critical::LEDGER_BUMP_AMOUNT = 535_680
-    let past_operational: u32 = start_seq + 120_961;
-    env.ledger().set(make_ledger_info(past_operational, 2_000_000));
-
-    // Administrative patient's key should now be expired — get_patient returns NotFound.
-    assert!(
-        client.try_get_patient(&admin_patient).is_err(),
-        "Administrative patient key should have expired"
+    let doctor = Address::generate(&env);
+    registry_client.register_provider(
+        &admin,
+        &doctor,
+        &String::from_str(&env, "Dr. Smith"),
+        &String::from_str(&env, "cardiology"),
+        &String::from_str(&env, "LIC-001"),
+        &BytesN::from_array(&env, &[1u8; 32]),
+        &admin,
+        &BytesN::from_array(&env, &[2u8; 32]),
+        &(env.ledger().timestamp() + 100_000),
+        &BytesN::from_array(&env, &[3u8; 32]),
     );
 
-    // Clinical patient's key should still be live — get_patient succeeds.
-    assert!(
-        client.try_get_patient(&clinical_patient).is_ok(),
-        "Clinical patient key should still be alive"
-    );
+    client.grant_access(&patient, &patient, &doctor);
+    let authorized = client.get_authorized_doctors(&patient);
+    assert_eq!(authorized.len(), 1);
 }

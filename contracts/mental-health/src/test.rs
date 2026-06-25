@@ -185,6 +185,7 @@ fn test_safety_plan_and_hospitalization() {
 
     client.track_symptom_severity(
         &patient_id,
+        &provider_id,
         &Symbol::new(&env, "panic"),
         &8,
         &1690000000,
