@@ -49,6 +49,10 @@ pub const SECONDS_PER_HOUR: u64 = 3600;
 pub const REFILL_WINDOW_SECS: u64 = 30 * 24 * SECONDS_PER_HOUR;
 /// Divisor applied to a prescription's total quantity for schedule-2 per-dispense limits.
 pub const MIN_REFILL_QUANTITY_DIVISOR: u32 = 2;
+/// Default max prescriptions a provider may issue in a 24-hour window.
+pub const DEFAULT_PRESCRIPTION_LIMIT: u32 = 100;
+/// Duration of the per-provider rate-limit window.
+pub const RATE_LIMIT_WINDOW_SECS: u64 = 24 * SECONDS_PER_HOUR;
 
 // ── DEA number validation ─────────────────────────────────────────────────────
 
@@ -324,6 +328,57 @@ pub struct IssueRequest {
     /// Required when `is_controlled == true` and a `schedule` is present.
     /// Format: 2 uppercase letters followed by 7 digits (e.g. "AB1234563").
     pub dea_number: Option<String>,
+    /// Required (non-None) when `bypass_allergy_check == true`.
+    /// Hash of the documented clinical justification for the override.
+    pub bypass_reason_hash: Option<BytesN<32>>,
+}
+
+/// Template storing all IssueRequest fields except patient and valid_until.
+/// Used by `create_template` / `issue_from_template`.
+#[contracttype]
+pub struct PrescriptionTemplate {
+    pub medication_name: String,
+    pub ndc_code: String,
+    pub dosage: String,
+    pub quantity: u32,
+    pub days_supply: u32,
+    pub refills_allowed: u32,
+    pub instructions_hash: BytesN<32>,
+    pub is_controlled: bool,
+    pub schedule: Option<u32>,
+    pub substitution_allowed: bool,
+    pub pharmacy_id: Option<Address>,
+    pub bypass_allergy_check: bool,
+    pub dea_number: Option<String>,
+    pub bypass_reason_hash: Option<BytesN<32>>,
+}
+
+/// Persisted template record with ownership metadata.
+#[contracttype]
+pub struct StoredTemplate {
+    pub template_id: u64,
+    pub provider: Address,
+    pub medication_name: String,
+    pub ndc_code: String,
+    pub dosage: String,
+    pub quantity: u32,
+    pub days_supply: u32,
+    pub refills_allowed: u32,
+    pub instructions_hash: BytesN<32>,
+    pub is_controlled: bool,
+    pub schedule: Option<u32>,
+    pub substitution_allowed: bool,
+    pub pharmacy_id: Option<Address>,
+    pub bypass_allergy_check: bool,
+    pub dea_number: Option<String>,
+    pub bypass_reason_hash: Option<BytesN<32>>,
+}
+
+/// Sliding-window counter for per-provider prescription rate limiting.
+#[contracttype]
+pub struct PrescriptionWindow {
+    pub count: u32,
+    pub window_start: u64,
 }
 
 #[contracttype]
@@ -444,15 +499,43 @@ impl PrescriptionContract {
         req: IssueRequest,
     ) -> Result<u64, Error> {
         provider_id.require_auth();
+        do_issue_prescription(&env, provider_id, patient_id, req)
+    }
 
-        // #345: verify provider is registered and active in the provider-registry.
+    /// Adjust the rate-limit cap for a specific provider (admin only).
+    pub fn set_provider_limit(
+        env: Env,
+        admin: Address,
+        provider: Address,
+        limit: u32,
+    ) -> Result<(), Error> {
+        admin.require_auth();
+        let configured: Option<Address> = env.storage().persistent().get(&DataKey::Admin);
+        if configured.as_ref().map_or(true, |a| *a != admin) {
+            return Err(Error::Unauthorized);
+        }
+        env.storage()
+            .persistent()
+            .set(&DataKey::ProviderPrescriptionLimit(provider), &limit);
+        Ok(())
+    }
+
+    /// Create a reusable prescription template owned by the calling provider.
+    /// Returns the new template_id.
+    pub fn create_template(
+        env: Env,
+        provider: Address,
+        template: PrescriptionTemplate,
+    ) -> Result<u64, Error> {
+        provider.require_auth();
+
         if let Some(registry_addr) = env
             .storage()
             .persistent()
             .get::<_, Address>(&DataKey::ProviderRegistry)
         {
             let client = ProviderRegistryClient::new(&env, &registry_addr);
-            if !client.is_provider(&provider_id) {
+            if !client.is_provider(&provider) {
                 return Err(Error::ProviderNotRegistered);
             }
         }
@@ -535,37 +618,37 @@ impl PrescriptionContract {
         let id = env
             .storage()
             .instance()
-            .get::<_, u64>(&Symbol::new(&env, "ID_COUNTER"))
+            .get::<_, u64>(&DataKey::TemplateCounter)
             .unwrap_or(0);
 
-        let prescription = Prescription {
-            provider_id,
-            patient_id,
-            medication_name: req.medication_name,
-            quantity: req.quantity,
-            quantity_dispensed: 0,
-            refills_allowed: req.refills_allowed,
-            refills_remaining: req.refills_allowed,
-            refills_used: 0,
-            is_controlled: req.is_controlled,
-            schedule: req.schedule,
-            current_pharmacy: req.pharmacy_id.clone(),
-            issuing_pharmacy: req.pharmacy_id,
-            status: PrescriptionStatus::Issued,
-            issued_at: env.ledger().timestamp(),
-            valid_until: req.valid_until,
-            last_dispensed: None,
-            transfer_count: 0,
-            transfer_history: Vec::new(&env),
+        let stored = StoredTemplate {
+            template_id,
+            provider: provider.clone(),
+            medication_name: template.medication_name,
+            ndc_code: template.ndc_code,
+            dosage: template.dosage,
+            quantity: template.quantity,
+            days_supply: template.days_supply,
+            refills_allowed: template.refills_allowed,
+            instructions_hash: template.instructions_hash,
+            is_controlled: template.is_controlled,
+            schedule: template.schedule,
+            substitution_allowed: template.substitution_allowed,
+            pharmacy_id: template.pharmacy_id,
+            bypass_allergy_check: template.bypass_allergy_check,
+            dea_number: template.dea_number,
+            bypass_reason_hash: template.bypass_reason_hash,
         };
 
-        env.storage().persistent().set(&id, &prescription);
+        env.storage()
+            .persistent()
+            .set(&DataKey::Template(template_id), &stored);
         env.storage()
             .instance()
             .set(&Symbol::new(&env, "ID_COUNTER"), &(id + 1));
         add_patient_prescription(&env, &prescription.patient_id, id);
 
-        Ok(id)
+        do_issue_prescription(&env, provider, patient, req)
     }
 
     pub fn dispense_prescription(
@@ -1483,6 +1566,168 @@ impl PrescriptionContract {
         }
         false
     }
+}
+
+/// Inner implementation shared by `issue_prescription` and `issue_from_template`.
+/// Handles: validity window checks, DEA validation, allergy bypass audit (#481),
+/// rate-limit enforcement (#480), prescription storage and event emission.
+fn do_issue_prescription(
+    env: &Env,
+    provider_id: Address,
+    patient_id: Address,
+    req: IssueRequest,
+) -> Result<u64, Error> {
+    // ── #481: bypass_allergy_check requires a non-empty reason hash ───────────
+    if req.bypass_allergy_check {
+        if req.bypass_reason_hash.is_none() {
+            return Err(Error::MissingOverrideReason);
+        }
+    }
+
+    // ── Provider registration check ───────────────────────────────────────────
+    if let Some(registry_addr) = env
+        .storage()
+        .persistent()
+        .get::<_, Address>(&DataKey::ProviderRegistry)
+    {
+        let client = ProviderRegistryClient::new(env, &registry_addr);
+        if !client.is_provider(&provider_id) {
+            return Err(Error::ProviderNotRegistered);
+        }
+    }
+
+    // ── Validity window ───────────────────────────────────────────────────────
+    temporal::must_be_future(env, req.valid_until)
+        .map_err(|_| Error::InvalidValidityWindow)?;
+    temporal::within_validity_window(
+        env.ledger().timestamp(),
+        req.valid_until,
+        temporal::MAX_VALIDITY_WINDOW_SECS,
+    )
+    .map_err(|_| Error::InvalidValidityWindow)?;
+
+    // ── DEA validation for scheduled controlled substances ────────────────────
+    if req.is_controlled {
+        if let Some(_schedule) = req.schedule {
+            match &req.dea_number {
+                Some(dea) => {
+                    if !validate_dea_number(dea.to_bytes().as_slice()) {
+                        return Err(Error::ControlledSubstanceViolation);
+                    }
+                }
+                None => return Err(Error::ControlledSubstanceViolation),
+            }
+        }
+    }
+
+    // ── #480: rate-limit enforcement ──────────────────────────────────────────
+    let limit: u32 = env
+        .storage()
+        .persistent()
+        .get(&DataKey::ProviderPrescriptionLimit(provider_id.clone()))
+        .unwrap_or(DEFAULT_PRESCRIPTION_LIMIT);
+
+    let now = env.ledger().timestamp();
+    let window_key = DataKey::ProviderPrescriptionWindow(provider_id.clone());
+    let mut pw: PrescriptionWindow = env
+        .storage()
+        .persistent()
+        .get(&window_key)
+        .unwrap_or(PrescriptionWindow { count: 0, window_start: now });
+
+    if now.saturating_sub(pw.window_start) >= RATE_LIMIT_WINDOW_SECS {
+        pw.count = 0;
+        pw.window_start = now;
+    }
+
+    if pw.count >= limit {
+        return Err(Error::RateLimitExceeded);
+    }
+    pw.count += 1;
+    env.storage().persistent().set(&window_key, &pw);
+
+    // ── Allergy check (cross-contract) ────────────────────────────────────────
+    if let Some(allergy_addr) = env
+        .storage()
+        .persistent()
+        .get::<_, Address>(&DataKey::AllergyRegistry)
+    {
+        let strict: bool = env
+            .storage()
+            .persistent()
+            .get(&DataKey::AllergyStrictMode)
+            .unwrap_or(false);
+
+        let allergy_client = AllergyManagementClient::new(env, &allergy_addr);
+        let interactions = allergy_client
+            .check_drug_allergy_interaction(&patient_id, &req.medication_name);
+
+        if !interactions.is_empty() {
+            if req.bypass_allergy_check {
+                // ── #481: emit AllergyBypassApproved audit event ──────────────
+                let allergen = interactions.get(0).unwrap().allergen.clone();
+                let justification_hash = req.bypass_reason_hash.clone().unwrap();
+                env.events().publish(
+                    (Symbol::new(env, "AllergyBypassApproved"),),
+                    (
+                        provider_id.clone(),
+                        patient_id.clone(),
+                        allergen,
+                        justification_hash,
+                        now,
+                    ),
+                );
+            } else if strict {
+                return Err(Error::AllergyInteractionDetected);
+            }
+        }
+    }
+
+    // ── Assign prescription ID and store ─────────────────────────────────────
+    let prescription_id = env
+        .storage()
+        .instance()
+        .get::<_, u64>(&DataKey::TemplateCounter) // reuse instance counter slot
+        .unwrap_or(0);
+    // Use a dedicated prescription counter separate from template counter
+    let rx_id: u64 = env
+        .storage()
+        .instance()
+        .get::<_, u64>(&Symbol::new(env, "RxCounter"))
+        .unwrap_or(0);
+    env.storage()
+        .instance()
+        .set(&Symbol::new(env, "RxCounter"), &(rx_id + 1));
+
+    let prescription = Prescription {
+        provider_id: provider_id.clone(),
+        patient_id: patient_id.clone(),
+        medication_name: req.medication_name.clone(),
+        quantity: req.quantity,
+        quantity_dispensed: 0,
+        refills_allowed: req.refills_allowed,
+        refills_remaining: req.refills_allowed,
+        refills_used: 0,
+        is_controlled: req.is_controlled,
+        schedule: req.schedule,
+        current_pharmacy: req.pharmacy_id.clone(),
+        issuing_pharmacy: req.pharmacy_id,
+        status: PrescriptionStatus::Issued,
+        issued_at: now,
+        valid_until: req.valid_until,
+        last_dispensed: None,
+        transfer_count: 0,
+        transfer_history: Vec::new(env),
+    };
+
+    env.storage().persistent().set(&rx_id, &prescription);
+
+    env.events().publish(
+        (Symbol::new(env, "prescription_issued"),),
+        (rx_id, provider_id, patient_id),
+    );
+
+    Ok(rx_id)
 }
 
 fn is_registry_governed(env: &Env) -> bool {
